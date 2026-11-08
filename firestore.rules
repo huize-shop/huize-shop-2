@@ -1,0 +1,40 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128;
+    }
+
+    // Products: Public catalogue access for reading, writes allowed for catalog management
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if isValidId(productId);
+    }
+
+    // Categories: Public reading, writes allowed
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow write: if isValidId(categoryId);
+    }
+
+    // Orders: Customers can submit orders via checkout, read & status update
+    match /orders/{orderId} {
+      allow read: if true;
+      allow create: if isValidId(orderId);
+      allow update, delete: if isValidId(orderId);
+    }
+
+    // Leads & CRM contacts:
+    match /leads/{leadId} {
+      allow read: if true;
+      allow write: if isValidId(leadId);
+    }
+
+    // Fallback rule for test/connection probe
+    match /test/{docId} {
+      allow read, write: if true;
+    }
+  }
+}

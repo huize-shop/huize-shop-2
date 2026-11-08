@@ -1,0 +1,88 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "Article ou produit vendu sur la boutique HUIZE SHOP",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Identifiant unique" },
+        "ref": { "type": "string", "description": "Référence produit (ex: HZ-B01)" },
+        "name": { "type": "string", "description": "Nom du produit" },
+        "category": { "type": "string", "description": "Slug de catégorie" },
+        "categoryLabel": { "type": "string", "description": "Nom de la catégorie" },
+        "price": { "type": "number", "description": "Prix en Francs CFA" },
+        "oldPrice": { "type": "number", "description": "Ancien prix barré optionnel" },
+        "badge": { "type": "string", "description": "Badge commercial (Nouveau, Promo, etc.)" },
+        "images": { "type": "array", "description": "Liste des URLs ou données photos du produit" },
+        "sizes": { "type": "array", "description": "Pointures ou tailles disponibles" },
+        "stock": { "type": "number", "description": "Quantité en stock" },
+        "description": { "type": "string", "description": "Description détaillée" },
+        "featured": { "type": "boolean", "description": "Mise en avant sur l'accueil" }
+      },
+      "required": ["id", "ref", "name", "category", "price", "stock"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Catégorie de produits de la boutique",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Identifiant unique" },
+        "name": { "type": "string", "description": "Nom affiché" },
+        "slug": { "type": "string", "description": "Identifiant slug d'URL" },
+        "icon": { "type": "string", "description": "Icône ou émoji" },
+        "badge": { "type": "string", "description": "Tag de mise en avant" },
+        "itemCount": { "type": "number", "description": "Nombre de produits" }
+      },
+      "required": ["id", "name", "slug"]
+    },
+    "WhatsAppOrder": {
+      "title": "WhatsAppOrder",
+      "description": "Commande passée et synchronisée avec WhatsApp",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Numéro de commande" },
+        "customerName": { "type": "string", "description": "Nom du client" },
+        "phone": { "type": "string", "description": "Téléphone WhatsApp" },
+        "itemsSummary": { "type": "string", "description": "Résumé des articles" },
+        "total": { "type": "number", "description": "Montant total en F CFA" },
+        "status": { "type": "string", "description": "Statut de livraison/paiement" },
+        "statusLabel": { "type": "string", "description": "Libellé du statut" },
+        "date": { "type": "string", "description": "Date de la commande" },
+        "city": { "type": "string", "description": "Lieu de livraison à Ouaga ou Province" }
+      },
+      "required": ["id", "customerName", "total", "status"]
+    },
+    "ClientLead": {
+      "title": "ClientLead",
+      "description": "Contact client ou prospect enregistré pour suivi commercial",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Identifiant" },
+        "name": { "type": "string", "description": "Nom complet" },
+        "city": { "type": "string", "description": "Ville ou quartier" },
+        "notes": { "type": "string", "description": "Notes commerciales ou préférences" },
+        "phone": { "type": "string", "description": "Numéro WhatsApp" },
+        "avatar": { "type": "string", "description": "Initiales avatar" }
+      },
+      "required": ["id", "name", "phone"]
+    }
+  },
+  "firestore": {
+    "/products/{productId}": {
+      "schema": { "$ref": "#/entities/Product" },
+      "description": "Collection des articles et photos du catalogue e-commerce"
+    },
+    "/categories/{categoryId}": {
+      "schema": { "$ref": "#/entities/Category" },
+      "description": "Collection des catégories de produits"
+    },
+    "/orders/{orderId}": {
+      "schema": { "$ref": "#/entities/WhatsAppOrder" },
+      "description": "Historique des commandes et paniers validés via WhatsApp"
+    },
+    "/leads/{leadId}": {
+      "schema": { "$ref": "#/entities/ClientLead" },
+      "description": "Annuaire des prospects et clients à relancer"
+    }
+  }
+}

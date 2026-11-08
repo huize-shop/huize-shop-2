@@ -1,0 +1,8 @@
+{
+  "name": "HUIZE SHOP - E-commerce Burkina Faso",
+  "description": "Boutique en ligne de baskets, sandales et vêtements au Burkina Faso avec commande directe et personnalisée sur WhatsApp (+226 53 74 27 48).",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

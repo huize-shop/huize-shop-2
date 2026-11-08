@@ -1,0 +1,1261 @@
+<!DOCTYPE html><html lang="fr"><head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HUIZE SHOP – Tableau de bord Administrateur</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    :root {
+      --color-green-deep: #123B2A;
+      --color-green: #1F5A40;
+      --color-offwhite: #F8F7F2;
+      --color-white: #FFFFFF;
+      --color-text: #202720;
+      --color-muted: #6B726C;
+      --color-lemon: #D8F36A;
+      --color-border: #E1E3DA;
+      --color-surface-soft: #EFEFE6;
+      --color-danger: #9A2F2F;
+      --color-warning: #8A5A00;
+      --color-success: #1F5A40;
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-pill: 999px;
+      --shadow-sm: 0 1px 3px rgba(18, 59, 42, 0.10);
+      --shadow-md: 0 8px 24px rgba(18, 59, 42, 0.12);
+      --font-body: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      --font-title: Georgia, "Times New Roman", serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font-body);
+      background-color: #F4F3EE;
+      color: var(--color-text);
+      display: flex;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* SIDEBAR */
+    .admin-sidebar {
+      width: 280px;
+      background-color: var(--color-green-deep);
+      color: var(--color-white);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      border-right: 1px solid rgba(255,255,255,0.08);
+      z-index: 20;
+    }
+
+    .admin-sidebar__header {
+      padding: 1.5rem 1.75rem;
+      border-bottom: 1px solid rgba(255,255,255,0.12);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .admin-sidebar__logo {
+      display: inline-block;
+      font-family: var(--font-title);
+      font-weight: 700;
+      font-size: 1.25rem;
+      letter-spacing: 0.12em;
+      color: var(--color-lemon);
+      text-decoration: none;
+    }
+
+    .badge-admin {
+      background: rgba(216, 243, 106, 0.18);
+      color: var(--color-lemon);
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      padding: 3px 8px;
+      border-radius: var(--radius-pill);
+      letter-spacing: 0.05em;
+    }
+
+    .admin-nav {
+      flex: 1;
+      padding: 1.25rem 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    .admin-nav__heading {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.45);
+      letter-spacing: 0.1em;
+      padding: 0.75rem 0.75rem 0.25rem;
+      font-weight: 700;
+    }
+
+    .admin-nav__link {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem 0.9rem;
+      border-radius: var(--radius-sm);
+      color: rgba(255,255,255,0.85);
+      text-decoration: none;
+      font-weight: 500;
+      font-size: 0.95rem;
+      transition: all 0.2s ease;
+      cursor: pointer;
+    }
+
+    .admin-nav__link:hover {
+      background-color: rgba(255,255,255,0.08);
+      color: var(--color-lemon);
+    }
+
+    .admin-nav__link.active {
+      background-color: var(--color-green);
+      color: var(--color-white);
+      font-weight: 600;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+
+    .admin-nav__badge {
+      margin-left: auto;
+      background: var(--color-lemon);
+      color: var(--color-green-deep);
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: var(--radius-pill);
+    }
+
+    .admin-sidebar__footer {
+      padding: 1.25rem;
+      border-top: 1px solid rgba(255,255,255,0.1);
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      background: rgba(0,0,0,0.15);
+    }
+
+    .admin-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: var(--color-lemon);
+      color: var(--color-green-deep);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 0.95rem;
+    }
+
+    .admin-user__name {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--color-white);
+    }
+
+    .admin-user__role {
+      font-size: 0.75rem;
+      color: rgba(255,255,255,0.6);
+    }
+
+    /* MAIN CONTENT */
+    .admin-main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      background-color: #F8F7F2;
+    }
+
+    /* TOPBAR */
+    .admin-topbar {
+      background: var(--color-white);
+      border-bottom: 1px solid var(--color-border);
+      padding: 1rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .topbar-title {
+      font-family: var(--font-title);
+      font-size: 1.4rem;
+      color: var(--color-green-deep);
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .topbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .btn-quick-view {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      background-color: var(--color-surface-soft);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-pill);
+      color: var(--color-green-deep);
+      text-decoration: none;
+      font-size: 0.85rem;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+
+    .btn-quick-view:hover {
+      background-color: var(--color-green-deep);
+      color: var(--color-white);
+    }
+
+    .btn-add-product {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.55rem 1.25rem;
+      background-color: var(--color-green-deep);
+      color: var(--color-white);
+      border: none;
+      border-radius: var(--radius-pill);
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: var(--shadow-sm);
+      transition: background-color 0.2s;
+    }
+
+    .btn-add-product:hover {
+      background-color: var(--color-green);
+    }
+
+    .status-live {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.8rem;
+      color: var(--color-green);
+      font-weight: 600;
+      background: rgba(31, 90, 64, 0.08);
+      padding: 4px 10px;
+      border-radius: var(--radius-pill);
+    }
+
+    .status-live::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      background-color: #25D366;
+      border-radius: 50%;
+      box-shadow: 0 0 0 3px rgba(37, 211, 102, 0.25);
+    }
+
+    /* BODY CONTAINER */
+    .admin-content {
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 2rem;
+      max-width: 1400px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    /* METRICS / STATS */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1.25rem;
+    }
+
+    .stat-card {
+      background: var(--color-white);
+      padding: 1.35rem 1.5rem;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--color-border);
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .stat-card::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 4px;
+      height: 100%;
+      background-color: var(--color-green);
+    }
+
+    .stat-card--highlight::after {
+      background-color: var(--color-lemon);
+    }
+
+    .stat-card__label {
+      font-size: 0.82rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      letter-spacing: 0.04em;
+    }
+
+    .stat-card__val {
+      font-size: 1.85rem;
+      font-weight: 700;
+      color: var(--color-green-deep);
+      font-family: var(--font-title);
+      line-height: 1.1;
+    }
+
+    .stat-card__sub {
+      font-size: 0.8rem;
+      color: var(--color-muted);
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .trend-up {
+      color: var(--color-green);
+      font-weight: 700;
+    }
+
+    /* MAIN SECTIONS SPLIT */
+    .grid-sections {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 1.5rem;
+    }
+
+    .card {
+      background: var(--color-white);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+    }
+
+    .card__header {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--color-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #FAF9F5;
+    }
+
+    .card__title {
+      font-family: var(--font-title);
+      font-size: 1.15rem;
+      color: var(--color-green-deep);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .card__actions {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+
+    /* TABLE */
+    .table-container {
+      width: 100%;
+      overflow-x: auto;
+    }
+
+    .admin-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.9rem;
+    }
+
+    .admin-table th {
+      background: var(--color-surface-soft);
+      color: var(--color-green-deep);
+      padding: 0.85rem 1rem;
+      font-weight: 600;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .admin-table td {
+      padding: 0.95rem 1rem;
+      border-bottom: 1px solid var(--color-border);
+      vertical-align: middle;
+    }
+
+    .admin-table tr:hover td {
+      background-color: #FAF9F5;
+    }
+
+    .table-prod-info {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+    }
+
+    .prod-thumb {
+      width: 44px;
+      height: 44px;
+      border-radius: var(--radius-sm);
+      background: var(--color-surface-soft);
+      border: 1px solid var(--color-border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      color: var(--color-green);
+      font-size: 0.85rem;
+      flex-shrink: 0;
+    }
+
+    .prod-name {
+      font-weight: 600;
+      color: var(--color-green-deep);
+      margin-bottom: 0.15rem;
+    }
+
+    .prod-cat {
+      font-size: 0.75rem;
+      color: var(--color-muted);
+    }
+
+    .price-tag {
+      font-weight: 700;
+      color: var(--color-green-deep);
+    }
+
+    /* BADGES */
+    .stock-pill {
+      display: inline-block;
+      padding: 0.2rem 0.65rem;
+      border-radius: var(--radius-pill);
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+
+    .stock-pill--in {
+      background: rgba(31, 90, 64, 0.12);
+      color: var(--color-green);
+    }
+
+    .stock-pill--low {
+      background: rgba(138, 90, 0, 0.15);
+      color: var(--color-warning);
+    }
+
+    .stock-pill--out {
+      background: rgba(154, 47, 47, 0.12);
+      color: var(--color-danger);
+    }
+
+    .action-btn-group {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .btn-icon {
+      padding: 0.4rem 0.65rem;
+      background: var(--color-offwhite);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-sm);
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--color-green-deep);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .btn-icon:hover {
+      background: var(--color-green-deep);
+      color: var(--color-white);
+    }
+
+    .btn-icon--del:hover {
+      background: var(--color-danger);
+      border-color: var(--color-danger);
+      color: var(--color-white);
+    }
+
+    /* CLIENT / PROSPECT LIST */
+    .client-list {
+      display: flex;
+      flex-direction: column;
+      divide-y: 1px solid var(--color-border);
+    }
+
+    .client-item {
+      padding: 1rem 1.25rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--color-border);
+      transition: background 0.15s;
+    }
+
+    .client-item:last-child {
+      border-bottom: none;
+    }
+
+    .client-item:hover {
+      background: #FAF9F5;
+    }
+
+    .client-avatar-name {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .client-avatar {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: var(--color-surface-soft);
+      border: 1px solid var(--color-border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      color: var(--color-green-deep);
+      font-size: 0.8rem;
+    }
+
+    .client-name {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--color-green-deep);
+    }
+
+    .client-meta {
+      font-size: 0.75rem;
+      color: var(--color-muted);
+    }
+
+    .client-whatsapp-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.4rem 0.8rem;
+      border-radius: var(--radius-pill);
+      background: #25D366;
+      color: white;
+      text-decoration: none;
+      font-size: 0.75rem;
+      font-weight: 700;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      transition: transform 0.15s;
+    }
+
+    .client-whatsapp-btn:hover {
+      transform: translateY(-1px);
+      filter: brightness(1.05);
+    }
+
+    /* MODAL / QUICK EDIT DRAWER PREVIEW */
+    .edit-drawer {
+      background: #FFFFFF;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      padding: 1.5rem;
+      margin-top: 1.5rem;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .edit-drawer__title {
+      font-family: var(--font-title);
+      font-size: 1.15rem;
+      color: var(--color-green-deep);
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .form-grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .form-field label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--color-green-deep);
+      margin-bottom: 0.35rem;
+    }
+
+    .form-field input, .form-field select {
+      width: 100%;
+      padding: 0.6rem 0.8rem;
+      border: 1.5px solid var(--color-border);
+      border-radius: var(--radius-sm);
+      font-size: 0.88rem;
+      font-family: inherit;
+    }
+
+    .form-field input:focus, .form-field select:focus {
+      border-color: var(--color-green);
+      outline: none;
+    }
+
+    .drawer-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.75rem;
+    }
+
+    /* RECENT ORDERS FEED */
+    .order-feed {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      padding: 1.25rem;
+    }
+
+    .order-card {
+      background: #FAF9F5;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-sm);
+      padding: 0.85rem 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .order-id {
+      font-weight: 700;
+      font-size: 0.85rem;
+      color: var(--color-green-deep);
+    }
+
+    .order-desc {
+      font-size: 0.8rem;
+      color: var(--color-muted);
+    }
+
+    .order-amt {
+      font-weight: 700;
+      color: var(--color-green);
+      font-size: 0.9rem;
+    }
+
+    .order-status {
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border-radius: var(--radius-pill);
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .order-status--pending {
+      background: #FFF3CD;
+      color: #856404;
+    }
+
+    .order-status--done {
+      background: #D4EDDA;
+      color: #155724;
+    }
+
+    @media (max-width: 1080px) {
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+      .grid-sections { grid-template-columns: 1fr; }
+      .form-grid-3 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- BARRE LATÉRALE DE GESTION -->
+  <aside class="admin-sidebar">
+    <div class="admin-sidebar__header">
+      <a href="index.html" class="admin-sidebar__logo">HUIZE SHOP</a>
+      <span class="badge-admin">Admin</span>
+    </div>
+
+    <nav class="admin-nav">
+      <div class="admin-nav__heading">Menu Principal</div>
+      <a class="admin-nav__link active" href="#dashboard">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+        Tableau de bord
+      </a>
+      <a class="admin-nav__link" href="#catalogue">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg>
+        Gestion Produits
+        <span class="admin-nav__badge">18</span>
+      </a><a class="admin-nav__link" href="#categories"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg> Gestion Catégories <span class="admin-nav__badge">3</span></a>
+      <a class="admin-nav__link" href="#clients">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+        Clients &amp; Prospects
+        <span class="admin-nav__badge">42</span>
+      </a>
+      <a class="admin-nav__link" href="#commandes">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
+        Commandes WhatsApp
+        <span class="admin-nav__badge" style="background:#25D366; color:white;">7</span>
+      </a>
+
+      <div class="admin-nav__heading">Paramètres &amp; Boutique</div>
+      <a class="admin-nav__link" href="boutique.html" target="_blank">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+        Voir la boutique en ligne
+      </a>
+      <a class="admin-nav__link" href="#parametres">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        Configuration WhatsApp
+      </a>
+    </nav>
+
+    <div class="admin-sidebar__footer">
+      <div class="admin-avatar">HZ</div>
+      <div class="admin-user">
+        <div class="admin-user__name">Gestionnaire HUIZE</div>
+        <div class="admin-user__role">Administrateur Principal</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- CONTENU PRINCIPAL DE L'ADMINISTRATION -->
+  <main class="admin-main">
+
+    <!-- BARRE SUPÉRIEURE -->
+    <header class="admin-topbar">
+      <div class="topbar-title">
+        <span class="">Tableau de bord &amp; Activités</span>
+        <span class="status-live">Boutique Ouagadougou en direct</span>
+      </div>
+
+      <div class="topbar-actions">
+        <a href="index.html" class="btn-quick-view" target="_blank">
+          <span class="">👁️ Voir le site</span>
+        </a>
+        <button class="btn-add-product" onclick="document.getElementById('product-edit-form').scrollIntoView({behavior: 'smooth'})">
+          <span class="">+ Ajouter un produit</span>
+        </button>
+      </div>
+    </header>
+
+    <div class="admin-content">
+
+      <!-- 1. CARTES D'ACTIVITÉS ET MÉTRIQUES -->
+      <section class="stats-grid">
+        <div class="stat-card stat-card--highlight">
+          <span class="stat-card__label">Commandes WhatsApp (ce mois)</span>
+          <span class="stat-card__val">142</span>
+          <span class="stat-card__sub"><span class="trend-up">+18%</span> vs mois précédent</span>
+        </div>
+
+        <div class="stat-card">
+          <span class="stat-card__label">Chiffre d'Affaires Estimé</span>
+          <span class="stat-card__val">2 845 000 <small style="font-size:1rem;">F CFA</small></span>
+          <span class="stat-card__sub"><span class="trend-up">+12%</span> par Orange &amp; Moov</span>
+        </div>
+
+        <div class="stat-card">
+          <span class="stat-card__label">Articles en Catalogue</span>
+          <span class="stat-card__val">24</span>
+          <span class="stat-card__sub">Baskets, sandales &amp; vêtements</span>
+        </div>
+
+        <div class="stat-card">
+          <span class="stat-card__label">Contacts / Prospects Suivis</span>
+          <span class="stat-card__val">89</span>
+          <span class="stat-card__sub"><span class="trend-up">15</span> nouveaux cette semaine</span>
+        </div>
+      </section>
+
+      <!-- 2. GESTION DES PRODUITS & DERNIÈRES ACTIVITÉS -->
+      <section class="grid-sections">
+
+        <!-- GESTION DU CATALOGUE (MODIFIER / AJOUTER / PRIX / STOCK) -->
+        <div class="card" id="catalogue">
+          <div class="card__header">
+            <h2 class="card__title">
+              <span class="">📦 Gestion des Produits de la Boutique</span>
+            </h2>
+            <div class="card__actions">
+              <input type="text" placeholder="Filtrer produit..." style="padding: 0.4rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); font-size: 0.85rem;">
+              <select style="padding: 0.4rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); font-size: 0.85rem;">
+                <option>Toutes catégories</option>
+                <option>Baskets</option>
+                <option>Sandales</option>
+                <option>Vêtements</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th class="">Produit</th>
+                  <th class="">Catégorie</th>
+                  <th class="">Prix (F CFA)</th>
+                  <th class="">Pointures / Tailles</th>
+                  <th class="">État du Stock</th>
+                  <th style="text-align: right;" class="">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="">
+                    <div class="table-prod-info">
+                      <div class="prod-thumb">👟</div>
+                      <div>
+                        <div class="prod-name">Sneaker Urbaine Velocity Red</div>
+                        <div class="prod-cat">Réf: HZ-B01 • Nouveau</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="">Baskets</td>
+                  <td class=""><span class="price-tag">22 500 F CFA</span></td>
+                  <td class="">39, 40, 41, 42, 43, 44</td>
+                  <td class=""><span class="stock-pill stock-pill--in">En stock (14)</span></td>
+                  <td style="text-align: right;" class="">
+                    <div class="action-btn-group" style="justify-content: flex-end;">
+                      <button class="btn-icon" title="Modifier le produit">✏️ Éditer</button>
+                      <button class="btn-icon" title="Ajuster le prix">💰 Prix</button>
+                      <button class="btn-icon btn-icon--del" title="Supprimer">🗑️</button>
+                    </div>
+                  </td>
+                </tr>
+
+                <tr>
+                  <td class="">
+                    <div class="table-prod-info">
+                      <div class="prod-thumb">👟</div>
+                      <div>
+                        <div class="prod-name">Sneaker Canvas Low Black &amp; White</div>
+                        <div class="prod-cat">Réf: HZ-B02 • Promo active</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="">Baskets</td>
+                  <td class=""><span class="price-tag" style="color:var(--color-warning);">18 000 F CFA</span></td>
+                  <td class="">40, 41, 42, 43</td>
+                  <td class=""><span class="stock-pill stock-pill--in">En stock (8)</span></td>
+                  <td style="text-align: right;" class="">
+                    <div class="action-btn-group" style="justify-content: flex-end;">
+                      <button class="btn-icon" title="Modifier le produit">✏️ Éditer</button>
+                      <button class="btn-icon" title="Ajuster le prix">💰 Prix</button>
+                      <button class="btn-icon btn-icon--del" title="Supprimer">🗑️</button>
+                    </div>
+                  </td>
+                </tr>
+
+                <tr>
+                  <td class="">
+                    <div class="table-prod-info">
+                      <div class="prod-thumb">👡</div>
+                      <div>
+                        <div class="prod-name">Sandale Cuir Tressé Confort Sahel</div>
+                        <div class="prod-cat">Réf: HZ-S01 • Artisanal</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="">Sandales</td>
+                  <td class=""><span class="price-tag">15 000 F CFA</span></td>
+                  <td class="">40, 41, 42, 43, 44</td>
+                  <td class=""><span class="stock-pill stock-pill--low">Faible (3)</span></td>
+                  <td style="text-align: right;" class="">
+                    <div class="action-btn-group" style="justify-content: flex-end;">
+                      <button class="btn-icon" title="Modifier le produit">✏️ Éditer</button>
+                      <button class="btn-icon" title="Ajuster le prix">💰 Prix</button>
+                      <button class="btn-icon btn-icon--del" title="Supprimer">🗑️</button>
+                    </div>
+                  </td>
+                </tr>
+
+                <tr>
+                  <td class="">
+                    <div class="table-prod-info">
+                      <div class="prod-thumb">👡</div>
+                      <div>
+                        <div class="prod-name">Mule Homme Premium Double Boucle</div>
+                        <div class="prod-cat">Réf: HZ-S02 • Cuir Noir</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="">Sandales</td>
+                  <td class=""><span class="price-tag">16 500 F CFA</span></td>
+                  <td class="">39, 41, 42, 44</td>
+                  <td class=""><span class="stock-pill stock-pill--in">En stock (11)</span></td>
+                  <td style="text-align: right;" class="">
+                    <div class="action-btn-group" style="justify-content: flex-end;">
+                      <button class="btn-icon" title="Modifier le produit">✏️ Éditer</button>
+                      <button class="btn-icon" title="Ajuster le prix">💰 Prix</button>
+                      <button class="btn-icon btn-icon--del" title="Supprimer">🗑️</button>
+                    </div>
+                  </td>
+                </tr>
+
+                <tr>
+                  <td class="">
+                    <div class="table-prod-info">
+                      <div class="prod-thumb">👕</div>
+                      <div>
+                        <div class="prod-name">Ensemble T-shirt Street Signature</div>
+                        <div class="prod-cat">Réf: HZ-V01 • Coton Bio</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="">Vêtements</td>
+                  <td class=""><span class="price-tag">12 500 F CFA</span></td>
+                  <td class="">M, L, XL</td>
+                  <td class=""><span class="stock-pill stock-pill--in">En stock (6)</span></td>
+                  <td style="text-align: right;" class="">
+                    <div class="action-btn-group" style="justify-content: flex-end;">
+                      <button class="btn-icon" title="Modifier le produit">✏️ Éditer</button>
+                      <button class="btn-icon" title="Ajuster le prix">💰 Prix</button>
+                      <button class="btn-icon btn-icon--del" title="Supprimer">🗑️</button>
+                    </div>
+                  </td>
+                </tr>
+
+                <tr>
+                  <td class="">
+                    <div class="table-prod-info">
+                      <div class="prod-thumb">👔</div>
+                      <div>
+                        <div class="prod-name">Chemise Légère Lin Décontractée</div>
+                        <div class="prod-cat">Réf: HZ-V02 • Manches courtes</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="">Vêtements</td>
+                  <td class=""><span class="price-tag">14 000 F CFA</span></td>
+                  <td class="">S, M, L, XL</td>
+                  <td class=""><span class="stock-pill stock-pill--out">Rupture (0)</span></td>
+                  <td style="text-align: right;" class="">
+                    <div class="action-btn-group" style="justify-content: flex-end;">
+                      <button class="btn-icon" title="Modifier le produit">✏️ Réappro</button>
+                      <button class="btn-icon" title="Ajuster le prix">💰 Prix</button>
+                      <button class="btn-icon btn-icon--del" title="Supprimer">🗑️</button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- FORMULAIRE RAPIDE DE MODIFICATION / AJOUT -->
+          <div class="edit-drawer" id="product-edit-form">
+            <div class="edit-drawer__title">
+              <span class="">⚡ Formulaire d'édition directe de produit</span>
+              <span style="font-size: 0.8rem; font-weight: normal; color: var(--color-muted);" class="">Enregistrement instantané</span>
+            </div>
+
+            <div class="form-grid-3">
+              <div class="form-field">
+                <label class="">Nom de l'article</label>
+                <input type="text" value="Sneaker Urbaine Velocity Red" placeholder="Nom de l'article">
+              </div>
+              <div class="form-field">
+                <label class="">Catégorie</label>
+                <select>
+                  <option selected="">Baskets / Chaussures</option>
+                  <option>Sandales</option>
+                  <option>Vêtements</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label class="">Prix en F CFA</label>
+                <input type="number" value="22500" placeholder="Prix en F CFA">
+              </div>
+            </div>
+
+            <div class="form-grid-3">
+              <div class="form-field">
+                <label class="">Pointures / Tailles disponibles</label>
+                <input type="text" value="39, 40, 41, 42, 43, 44" placeholder="Ex: 39, 40, 41 ou S, M, L">
+              </div>
+              <div class="form-field">
+                <label class="">Quantité en stock</label>
+                <input type="number" value="14" placeholder="Ex: 10">
+              </div>
+              <div class="form-field">
+                <label class="">Badge promotionnel</label>
+                <select>
+                  <option selected="">Nouveau</option>
+                  <option>Promo</option>
+                  <option>Stock limité</option>
+                  <option>Aucun</option>
+                </select>
+              </div>
+            </div>
+
+            <div style="margin-top: 1.25rem; margin-bottom: 1.25rem; border-top: 1px dashed var(--color-border); padding-top: 1.25rem;" class="">
+  <label style="display: block; font-size: 0.85rem; font-weight: 700; color: var(--color-green-deep); margin-bottom: 0.75rem;" class="">
+    📸 Photos de l'article (Galerie &amp; Photo principale)
+  </label>
+  
+  <!-- Zone d'import / Drag and Drop -->
+  <div style="border: 2px dashed var(--color-border); border-radius: var(--radius-md); padding: 1.25rem; text-align: center; background: #FAF9F5; cursor: pointer; transition: border-color 0.2s; margin-bottom: 1rem;">
+    <div style="font-size: 1.6rem; margin-bottom: 0.35rem;" class="">☁️</div>
+    <div style="font-weight: 600; font-size: 0.88rem; color: var(--color-green-deep); margin-bottom: 0.2rem;" class="">
+      Glissez vos images ici ou cliquez pour parcourir les fichiers
+    </div>
+    <div style="font-size: 0.75rem; color: var(--color-muted);" class="">
+      Formats acceptés : JPG, PNG, WEBP (Max 5 Mo par image)
+    </div>
+  </div>
+
+  <!-- Galerie de prévisualisation -->
+  <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 0.75rem;">
+    <!-- Visuel 1 : Photo Principale -->
+    <div style="position: relative; border: 2px solid var(--color-green); border-radius: var(--radius-sm); padding: 0.5rem; background: var(--color-white); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; align-items: center;">
+      <span style="position: absolute; top: 4px; left: 4px; background: var(--color-lemon); color: var(--color-green-deep); font-size: 0.65rem; font-weight: 700; padding: 2px 5px; border-radius: var(--radius-pill);" class="">Principale</span>
+      <button type="button" style="position: absolute; top: 4px; right: 4px; background: rgba(154, 47, 47, 0.12); color: var(--color-danger); border: none; border-radius: 50%; width: 20px; height: 20px; font-size: 0.7rem; cursor: pointer; display: flex; align-items: center; justify-content: center;" title="Supprimer" class="">✕</button>
+      <div style="width: 100%; height: 75px; background: var(--color-surface-soft); border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; font-size: 2rem; margin-top: 0.75rem;" class="">👟</div>
+      <span style="font-size: 0.7rem; color: var(--color-muted); margin-top: 0.35rem; font-weight: 600;" class="">Vue de face</span>
+      <span style="font-size: 0.68rem; color: var(--color-green); font-weight: 700; margin-top: 2px;" class="">✓ Photo active</span>
+    </div>
+
+    <!-- Visuel 2 -->
+    <div style="position: relative; border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 0.5rem; background: var(--color-white); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; align-items: center;">
+      <button type="button" style="position: absolute; top: 4px; right: 4px; background: rgba(154, 47, 47, 0.12); color: var(--color-danger); border: none; border-radius: 50%; width: 20px; height: 20px; font-size: 0.7rem; cursor: pointer; display: flex; align-items: center; justify-content: center;" title="Supprimer" class="">✕</button>
+      <div style="width: 100%; height: 75px; background: var(--color-surface-soft); border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; font-size: 2rem; margin-top: 0.75rem;" class="">📐</div>
+      <span style="font-size: 0.7rem; color: var(--color-muted); margin-top: 0.35rem; font-weight: 600;" class="">Détail semelle</span>
+      <button type="button" style="font-size: 0.65rem; color: var(--color-green-deep); background: var(--color-surface-soft); border: 1px solid var(--color-border); border-radius: var(--radius-pill); padding: 2px 6px; margin-top: 2px; cursor: pointer;" class="">Définir principale</button>
+    </div>
+
+    <!-- Visuel 3 -->
+    <div style="position: relative; border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 0.5rem; background: var(--color-white); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; align-items: center;">
+      <button type="button" style="position: absolute; top: 4px; right: 4px; background: rgba(154, 47, 47, 0.12); color: var(--color-danger); border: none; border-radius: 50%; width: 20px; height: 20px; font-size: 0.7rem; cursor: pointer; display: flex; align-items: center; justify-content: center;" title="Supprimer" class="">✕</button>
+      <div style="width: 100%; height: 75px; background: var(--color-surface-soft); border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; font-size: 2rem; margin-top: 0.75rem;" class="">📦</div>
+      <span style="font-size: 0.7rem; color: var(--color-muted); margin-top: 0.35rem; font-weight: 600;" class="">Packaging boîte</span>
+      <button type="button" style="font-size: 0.65rem; color: var(--color-green-deep); background: var(--color-surface-soft); border: 1px solid var(--color-border); border-radius: var(--radius-pill); padding: 2px 6px; margin-top: 2px; cursor: pointer;" class="">Définir principale</button>
+    </div>
+
+    <!-- Bouton interactif + Ajouter un visuel -->
+    <button type="button" style="border: 1.5px dashed var(--color-border); border-radius: var(--radius-sm); background: #FAF9F5; min-height: 125px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.35rem; cursor: pointer; color: var(--color-green-deep); transition: all 0.2s;">
+      <span style="font-size: 1.4rem; line-height: 1;" class="">+</span>
+      <span style="font-size: 0.75rem; font-weight: 600;" class="">Ajouter un visuel</span>
+    </button>
+  </div>
+</div><div style="margin-bottom: 1.5rem; padding-top: 1.25rem; border-top: 1px solid var(--color-border);">
+  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem;">
+    <label style="font-size: 0.85rem; font-weight: 700; color: var(--color-green-deep); display: flex; align-items: center; gap: 0.4rem;">
+      <span class="">📸 Photos de l'article (Galerie &amp; Photo principale)</span>
+    </label>
+    <span style="font-size: 0.75rem; color: var(--color-muted);" class="">3 / 6 photos chargées</span>
+  </div>
+
+  <!-- Zone Drag & Drop -->
+  <div style="border: 2px dashed #B8C2B9; border-radius: var(--radius-sm); padding: 1.25rem 1rem; text-align: center; background: #FAF9F5; cursor: pointer; transition: all 0.2s; margin-bottom: 1rem;">
+    <div style="font-size: 1.6rem; line-height: 1; margin-bottom: 0.35rem;" class="">☁️</div>
+    <div style="font-size: 0.85rem; font-weight: 600; color: var(--color-green-deep); margin-bottom: 0.2rem;" class="">
+      Glissez vos images ici ou <span style="text-decoration: underline; color: var(--color-green);" class="">cliquez pour parcourir</span> les fichiers
+    </div>
+    <div style="font-size: 0.75rem; color: var(--color-muted);" class="">
+      JPG, PNG, WEBP — max 5 Mo par image • Format carré (1:1) recommandé
+    </div>
+  </div>
+
+  <!-- Galerie de vignettes prévisualisées -->
+  <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 0.75rem;">
+    <!-- Vignette 1 (Principale) -->
+    <div style="position: relative; border: 2px solid var(--color-green); border-radius: var(--radius-sm); background: #FFFFFF; padding: 0.5rem; display: flex; flex-direction: column; align-items: center; gap: 0.35rem; box-shadow: var(--shadow-sm);">
+      <span style="position: absolute; top: -8px; left: 8px; background: var(--color-lemon); color: var(--color-green-deep); font-size: 0.65rem; font-weight: 800; padding: 1px 6px; border-radius: var(--radius-pill); letter-spacing: 0.03em;" class="">★ Principale</span>
+      <button type="button" style="position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 50%; background: rgba(0,0,0,0.06); border: none; font-size: 0.7rem; color: var(--color-muted); cursor: pointer; display: flex; align-items: center; justify-content: center;" title="Supprimer la photo" class="">✕</button>
+      <div style="width: 100%; height: 72px; border-radius: 4px; background: var(--color-surface-soft); display: flex; align-items: center; justify-content: center; font-size: 1.8rem;" class="">👟</div>
+      <div style="font-size: 0.72rem; font-weight: 600; color: var(--color-green-deep); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%;" class="">Vue de face</div>
+      <span style="font-size: 0.68rem; color: var(--color-green); font-weight: 600;" class="">Photo active</span>
+    </div>
+
+    <!-- Vignette 2 -->
+    <div style="position: relative; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: #FFFFFF; padding: 0.5rem; display: flex; flex-direction: column; align-items: center; gap: 0.35rem;">
+      <button type="button" style="position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 50%; background: rgba(0,0,0,0.06); border: none; font-size: 0.7rem; color: var(--color-muted); cursor: pointer; display: flex; align-items: center; justify-content: center;" title="Supprimer la photo" class="">✕</button>
+      <div style="width: 100%; height: 72px; border-radius: 4px; background: var(--color-surface-soft); display: flex; align-items: center; justify-content: center; font-size: 1.8rem;" class="">🔍</div>
+      <div style="font-size: 0.72rem; font-weight: 600; color: var(--color-green-deep); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%;" class="">Détail semelle</div>
+      <button type="button" style="font-size: 0.68rem; padding: 2px 6px; border: 1px solid var(--color-border); border-radius: var(--radius-pill); background: var(--color-offwhite); color: var(--color-green-deep); cursor: pointer; font-weight: 600;" class="">Définir principale</button>
+    </div>
+
+    <!-- Vignette 3 -->
+    <div style="position: relative; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: #FFFFFF; padding: 0.5rem; display: flex; flex-direction: column; align-items: center; gap: 0.35rem;">
+      <button type="button" style="position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 50%; background: rgba(0,0,0,0.06); border: none; font-size: 0.7rem; color: var(--color-muted); cursor: pointer; display: flex; align-items: center; justify-content: center;" title="Supprimer la photo" class="">✕</button>
+      <div style="width: 100%; height: 72px; border-radius: 4px; background: var(--color-surface-soft); display: flex; align-items: center; justify-content: center; font-size: 1.8rem;" class="">📦</div>
+      <div style="font-size: 0.72rem; font-weight: 600; color: var(--color-green-deep); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%;" class="">Packaging boîte</div>
+      <button type="button" style="font-size: 0.68rem; padding: 2px 6px; border: 1px solid var(--color-border); border-radius: var(--radius-pill); background: var(--color-offwhite); color: var(--color-green-deep); cursor: pointer; font-weight: 600;" class="">Définir principale</button>
+    </div>
+
+    <!-- Bouton Ajouter Visuel -->
+    <div style="border: 2px dashed var(--color-border); border-radius: var(--radius-sm); background: #FAF9F5; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.25rem; min-height: 120px; cursor: pointer; transition: all 0.15s; padding: 0.5rem;">
+      <span style="font-size: 1.3rem; color: var(--color-green);" class="">+</span>
+      <span style="font-size: 0.75rem; font-weight: 600; color: var(--color-green-deep); text-align: center;" class="">Ajouter un visuel</span>
+    </div>
+  </div>
+</div><div class="drawer-actions">
+              <button class="btn-quick-view" type="button">Réinitialiser</button>
+              <button class="btn-add-product" type="button" style="background:var(--color-green);">Sauvegarder les modifications</button>
+            </div>
+          </div>
+        </div><div class="card" id="categories" style="margin-top: 1.5rem;"><div class="card__header"><h2 class="card__title"><span class="">📁 Gestion des Catégories de la Boutique</span></h2><span class="badge-admin" style="background: rgba(31, 90, 64, 0.12); color: var(--color-green);">3 Actives</span></div><div style="padding: 1.25rem 1.5rem; background: #FAF9F5; border-bottom: 1px solid var(--color-border);"><form style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;" onsubmit="event.preventDefault();"><div style="flex: 1; min-width: 220px;"><input type="text" placeholder="Ex : Accessoires, Chapeaux, Montres..." style="width: 100%; padding: 0.55rem 0.85rem; border: 1.5px solid var(--color-border); border-radius: var(--radius-sm); font-size: 0.88rem; background: #FFFFFF;"></div><div style="width: 140px;"><select style="width: 100%; padding: 0.55rem 0.85rem; border: 1.5px solid var(--color-border); border-radius: var(--radius-sm); font-size: 0.88rem; background: #FFFFFF;"><option value="👟">👟 Basket</option><option value="👡">👡 Sandale</option><option value="👕">👕 Vêtement</option><option value="🧢">🧢 Chapeau</option><option value="👜">👜 Sac</option><option value="🕶️">🕶️ Accessoire</option></select></div><button type="button" class="btn-add-product" style="white-space: nowrap;">+ Ajouter la catégorie</button></form></div><div class="table-container"><table class="admin-table"><thead><tr><th class="">Icône</th><th class="">Nom de la catégorie</th><th class="">Articles rattachés</th><th class="">Statut</th><th style="text-align: right;" class="">Actions</th></tr></thead><tbody><tr><td class=""><div class="prod-thumb" style="font-size: 1.3rem;">👟</div></td><td class=""><strong style="color: var(--color-green-deep); font-size: 0.95rem;">Baskets</strong></td><td class=""><span style="font-weight: 600; color: var(--color-muted);" class="">12 articles</span></td><td class=""><span class="stock-pill stock-pill--in">Active</span></td><td style="text-align: right;" class=""><div class="action-btn-group" style="justify-content: flex-end;"><button class="btn-icon" title="Modifier la catégorie">✏️ Modifier</button><button class="btn-icon btn-icon--del" title="Supprimer">🗑️</button></div></td></tr><tr><td class=""><div class="prod-thumb" style="font-size: 1.3rem;">👡</div></td><td class=""><strong style="color: var(--color-green-deep); font-size: 0.95rem;">Sandales</strong></td><td class=""><span style="font-weight: 600; color: var(--color-muted);" class="">7 articles</span></td><td class=""><span class="stock-pill stock-pill--in">Active</span></td><td style="text-align: right;" class=""><div class="action-btn-group" style="justify-content: flex-end;"><button class="btn-icon" title="Modifier la catégorie">✏️ Modifier</button><button class="btn-icon btn-icon--del" title="Supprimer">🗑️</button></div></td></tr><tr><td class=""><div class="prod-thumb" style="font-size: 1.3rem;">👕</div></td><td class=""><strong style="color: var(--color-green-deep); font-size: 0.95rem;">Vêtements</strong></td><td class=""><span style="font-weight: 600; color: var(--color-muted);" class="">5 articles</span></td><td class=""><span class="stock-pill stock-pill--in">Active</span></td><td style="text-align: right;" class=""><div class="action-btn-group" style="justify-content: flex-end;"><button class="btn-icon" title="Modifier la catégorie">✏️ Modifier</button><button class="btn-icon btn-icon--del" title="Supprimer">🗑️</button></div></td></tr></tbody></table></div></div>
+
+        <!-- SUIVI DES PERSONNES (CLIENTS, PROSPECTS, WHATSAPP) & COMMANDES RÉCENTES -->
+        <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+
+          <!-- SUIVI DES CLIENTS / CONTACTS -->
+          <div class="card" id="clients">
+            <div class="card__header">
+              <h2 class="card__title">
+                <span class="">👥 Suivi des Clients &amp; Contacts</span>
+              </h2>
+              <span class="badge-admin">WhatsApp Connect</span>
+            </div>
+
+            <div class="client-list">
+              <div class="client-item">
+                <div class="client-avatar-name">
+                  <div class="client-avatar">IO</div>
+                  <div>
+                    <div class="client-name">Ibrahim Ouédraogo</div>
+                    <div class="client-meta">Ouagadougou • Sneaker Velocity (42)</div>
+                  </div>
+                </div>
+                <a href="https://wa.me/22670000000" target="_blank" class="client-whatsapp-btn">
+                  <span class="">Relancer</span>
+                </a>
+              </div>
+
+              <div class="client-item">
+                <div class="client-avatar-name">
+                  <div class="client-avatar">SK</div>
+                  <div>
+                    <div class="client-name">Salif Kaboré</div>
+                    <div class="client-meta">Bobo-Dioulasso • Sandale Sahel (41)</div>
+                  </div>
+                </div>
+                <a href="https://wa.me/22670000000" target="_blank" class="client-whatsapp-btn">
+                  <span class="">WhatsApp</span>
+                </a>
+              </div>
+
+              <div class="client-item">
+                <div class="client-avatar-name">
+                  <div class="client-avatar">AS</div>
+                  <div>
+                    <div class="client-name">Aminata Sawadogo</div>
+                    <div class="client-meta">Karpala, Ouaga • Panier en attente (37 500 F)</div>
+                  </div>
+                </div>
+                <a href="https://wa.me/22670000000" target="_blank" class="client-whatsapp-btn">
+                  <span class="">Contacter</span>
+                </a>
+              </div>
+
+              <div class="client-item">
+                <div class="client-avatar-name">
+                  <div class="client-avatar">MT</div>
+                  <div>
+                    <div class="client-name">Moussa Traoré</div>
+                    <div class="client-meta">Ouaga 2000 • T-shirt Signature (XL)</div>
+                  </div>
+                </div>
+                <a href="https://wa.me/22670000000" target="_blank" class="client-whatsapp-btn">
+                  <span class="">WhatsApp</span>
+                </a>
+              </div>
+
+              <div class="client-item">
+                <div class="client-avatar-name">
+                  <div class="client-avatar">FZ</div>
+                  <div>
+                    <div class="client-name">Fatou Zongo</div>
+                    <div class="client-meta">1200 Logements • Question pointure 39</div>
+                  </div>
+                </div>
+                <a href="https://wa.me/22670000000" target="_blank" class="client-whatsapp-btn">
+                  <span class="">Répondre</span>
+                </a>
+              </div>
+            </div>
+          </div>
+
+          <!-- COMMANDES EN DIRECT -->
+          <div class="card" id="commandes">
+            <div class="card__header">
+              <h2 class="card__title">
+                <span class="">⚡ Dernières Activités WhatsApp</span>
+              </h2>
+              <span style="font-size: 0.8rem; font-weight: 600; color: var(--color-green);" class="">En temps réel</span>
+            </div>
+
+            <div class="order-feed">
+              <div class="order-card">
+                <div>
+                  <div class="order-id">CMD #1084 • Ibrahim O.</div>
+                  <div class="order-desc">1x Sneaker Velocity Red (Pointure 42)</div>
+                </div>
+                <div style="text-align: right;">
+                  <div class="order-amt">22 500 F CFA</div>
+                  <span class="order-status order-status--pending">À livrer</span>
+                </div>
+              </div>
+
+              <div class="order-card">
+                <div>
+                  <div class="order-id">CMD #1083 • Salif K.</div>
+                  <div class="order-desc">1x Sandale Sahel + 1x T-shirt</div>
+                </div>
+                <div style="text-align: right;">
+                  <div class="order-amt">27 500 F CFA</div>
+                  <span class="order-status order-status--done">Payé (Moov)</span>
+                </div>
+              </div>
+
+              <div class="order-card">
+                <div>
+                  <div class="order-id">CMD #1082 • Client Anonyme</div>
+                  <div class="order-desc">Panier envoyé via bouton WhatsApp</div>
+                </div>
+                <div style="text-align: right;">
+                  <div class="order-amt">37 500 F CFA</div>
+                  <span class="order-status order-status--pending">En discussion</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </section>
+
+    </div>
+  </main>
+
+
+
+
+
+
+
+</body></html>

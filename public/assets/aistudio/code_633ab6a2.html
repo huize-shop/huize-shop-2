@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+
+<html lang="fr">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1" name="viewport"/>
+<title>Boutique – HUIZE SHOP | Baskets, sandales et vêtements</title>
+<meta content="La boutique HUIZE SHOP : baskets, sandales et vêtements au Burkina Faso. Prix en F CFA, commande simple via WhatsApp." name="description"/>
+<style>
+:root {
+  --color-green-deep: #123B2A;
+  --color-green: #1F5A40;
+  --color-offwhite: #F8F7F2;
+  --color-white: #FFFFFF;
+  --color-text: #202720;
+  --color-muted: #6B726C;
+  --color-lemon: #D8F36A;
+  --color-border: #E1E3DA;
+  --color-surface-soft: #EFEFE6;
+  --color-danger: #9A2F2F;
+  --color-warning: #8A5A00;
+  --color-focus: #1F5A40;
+  --font-body: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-title: Georgia, "Times New Roman", serif;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 5rem;
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 22px;
+  --radius-pill: 999px;
+  --shadow-sm: 0 1px 3px rgba(18, 59, 42, 0.10);
+  --shadow-md: 0 8px 24px rgba(18, 59, 42, 0.12);
+  --container-width: 1200px;
+  --header-height: 72px;
+  --touch-target: 44px;
+  --transition: 0.2s ease;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; font-family: var(--font-body); font-size: 1rem; line-height: 1.6; color: var(--color-text); background-color: var(--color-offwhite); }
+img { display: block; max-width: 100%; height: auto; }
+h1, h2, h3 { margin: 0; font-family: var(--font-title); color: var(--color-green-deep); }
+ul { margin: 0; padding: 0; list-style: none; }
+a { color: var(--color-green); text-decoration: none; transition: color var(--transition); }
+a:hover { color: var(--color-green-deep); }
+
+.container { width: 100%; max-width: var(--container-width); margin-inline: auto; padding-inline: var(--space-5); }
+.section { padding-block: var(--space-8); }
+.section__title { margin-bottom: var(--space-6); font-size: clamp(1.8rem, 1.4rem + 1.8vw, 2.6rem); text-align: center; }
+.section__title::after { content: ""; display: block; width: 56px; height: 4px; margin: var(--space-3) auto 0; border-radius: var(--radius-pill); background-color: var(--color-lemon); }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; min-height: var(--touch-target); padding: 0.7rem 1.4rem; border: 2px solid transparent; border-radius: var(--radius-pill); font-family: inherit; font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: all var(--transition); }
+.btn--primary { background-color: var(--color-green-deep); color: var(--color-white); }
+.btn--primary:hover { background-color: var(--color-green); }
+.btn--secondary { background-color: var(--color-lemon); color: var(--color-green-deep); }
+.btn--outline { border-color: var(--color-green-deep); background-color: transparent; color: var(--color-green-deep); }
+
+.site-header { position: sticky; top: 0; z-index: 100; background-color: var(--color-white); border-bottom: 1px solid var(--color-border); box-shadow: var(--shadow-sm); }
+.site-header__inner { display: flex; align-items: center; justify-content: space-between; gap: var(--space-5); min-height: var(--header-height); }
+.brand__logo-placeholder { display: inline-block; padding: 0.35rem 0.8rem; border-radius: var(--radius-sm); background-color: var(--color-green-deep); color: var(--color-lemon); font-family: var(--font-title); font-size: 1.25rem; font-weight: 700; letter-spacing: 0.12em; }
+.main-nav__list { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-1) var(--space-2); }
+.main-nav__link { display: inline-flex; align-items: center; min-height: var(--touch-target); padding: 0.4rem 0.7rem; border-radius: var(--radius-sm); color: var(--color-text); font-size: 0.95rem; font-weight: 500; }
+.main-nav__link[aria-current="page"] { color: var(--color-green-deep); font-weight: 700; box-shadow: inset 0 -3px 0 var(--color-lemon); }
+.header-actions { display: flex; align-items: center; gap: var(--space-2); }
+.header-actions__link { display: inline-flex; align-items: center; min-height: var(--touch-target); padding: 0.4rem 0.8rem; border-radius: var(--radius-pill); font-size: 0.9rem; font-weight: 600; }
+.header-actions__link--whatsapp { background-color: var(--color-lemon); color: var(--color-green-deep); }
+.header-actions__cart { background-color: var(--color-green-deep); color: var(--color-white); }
+.cart-count { display: inline-flex; align-items: center; justify-content: center; min-width: 1.5rem; height: 1.5rem; border-radius: var(--radius-pill); background-color: var(--color-lemon); color: var(--color-green-deep); font-size: 0.8rem; font-weight: 700; margin-left: 0.4rem; }
+
+.catalogue { background-color: var(--color-white); }
+.catalogue__tools { display: grid; grid-template-columns: 1fr minmax(220px, 300px) minmax(180px, 240px); align-items: end; gap: var(--space-4) var(--space-5); margin-bottom: var(--space-6); padding: var(--space-5); border-radius: var(--radius-md); background-color: var(--color-offwhite); border: 1px solid var(--color-border); }
+.catalogue__filters { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.filter-button { min-height: var(--touch-target); padding: 0.5rem 1.2rem; border: 1.5px solid var(--color-green-deep); border-radius: var(--radius-pill); background-color: var(--color-white); color: var(--color-green-deep); font-family: inherit; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: all var(--transition); }
+.filter-button.is-active, .filter-button:hover { background-color: var(--color-green-deep); color: var(--color-white); }
+.field__label { display: block; margin-bottom: var(--space-1); font-size: 0.85rem; font-weight: 600; color: var(--color-green-deep); }
+.field__input, .field__select { width: 100%; min-height: var(--touch-target); padding: 0.6rem 0.9rem; border: 1.5px solid var(--color-border); border-radius: var(--radius-sm); background-color: var(--color-white); font-family: inherit; font-size: 1rem; color: var(--color-text); }
+
+.product-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-5); }
+.product-card { position: relative; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--color-border); border-radius: var(--radius-md); background-color: var(--color-white); box-shadow: var(--shadow-sm); transition: transform var(--transition), box-shadow var(--transition); }
+.product-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-md); }
+.product-card__media { position: relative; }
+.product-card__image { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; }
+.product-card__badge { position: absolute; top: var(--space-2); left: var(--space-2); padding: 0.2rem 0.6rem; border-radius: var(--radius-pill); background-color: var(--color-lemon); color: var(--color-green-deep); font-size: 0.75rem; font-weight: 700; }
+.product-card__badge--promo { background-color: #ff5252; color: white; }
+.product-card__body { display: flex; flex: 1; flex-direction: column; gap: var(--space-2); padding: var(--space-4); }
+.product-card__category { color: var(--color-muted); font-size: 0.75rem; font-weight: 700; text-transform: uppercase; }
+.product-card__name { font-size: 1.05rem; font-weight: 600; color: var(--color-green-deep); }
+.product-card__price { display: flex; align-items: baseline; gap: var(--space-2); margin-top: auto; }
+.price--current { font-size: 1.25rem; font-weight: 700; color: var(--color-green-deep); }
+.price--old { font-size: 0.9rem; color: var(--color-muted); text-decoration: line-through; }
+.availability { display: flex; align-items: center; gap: var(--space-1); font-size: 0.85rem; font-weight: 600; color: var(--color-green); }
+.availability::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background-color: currentColor; }
+.product-card__actions { padding: 0 var(--space-4) var(--space-4); }
+.product-card__actions .btn { width: 100%; }
+
+.site-footer { background-color: var(--color-green-deep); color: rgba(255, 255, 255, 0.85); margin-top: var(--space-8); }
+.site-footer__inner { display: grid; grid-template-columns: 1.3fr 1.3fr 1fr 1.2fr 1.2fr; gap: var(--space-6); padding-block: var(--space-7); }
+.site-footer__brand-name { font-size: 1.6rem; color: var(--color-lemon); }
+.site-footer__slogan { margin-top: var(--space-2); font-family: var(--font-title); font-style: italic; }
+.site-footer__title { margin-bottom: var(--space-3); font-size: 0.9rem; text-transform: uppercase; color: var(--color-white); }
+.site-footer__list { display: grid; gap: var(--space-2); }
+.site-footer a { color: var(--color-white); }
+.site-footer a:hover { color: var(--color-lemon); }
+.site-footer__copyright { padding-block: var(--space-4); border-top: 1px solid rgba(255, 255, 255, 0.15); font-size: 0.85rem; text-align: center; }
+
+@media (max-width: 1100px) { .product-grid { grid-template-columns: repeat(3, 1fr); } .site-footer__inner { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 900px) { .catalogue__tools { grid-template-columns: 1fr; } .product-grid { grid-template-columns: repeat(2, 1fr); } .site-footer__inner { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 640px) { .product-grid { grid-template-columns: repeat(2, 1fr); gap: var(--space-3); } .site-footer__inner { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body class="page page--shop">
+<header class="site-header">
+<div class="site-header__inner container">
+<a class="brand" href="index.html">
+<span class="brand__logo-placeholder">HUIZE SHOP</span>
+</a>
+<nav class="main-nav">
+<ul class="main-nav__list">
+<li><a class="main-nav__link" href="index.html">Accueil</a></li>
+<li><a aria-current="page" class="main-nav__link" href="boutique.html">Boutique</a></li>
+<li><a class="main-nav__link" href="boutique.html?categorie=chaussures">Baskets</a></li>
+<li><a class="main-nav__link" href="boutique.html?categorie=sandales">Sandales</a></li>
+<li><a class="main-nav__link" href="boutique.html?categorie=vetements">Vêtements</a></li>
+<li><a class="main-nav__link" href="contact.html">Contact</a></li>
+</ul>
+</nav>
+<div class="header-actions">
+<a class="header-actions__link header-actions__link--whatsapp" href="https://wa.me/22670000000" target="_blank">WhatsApp</a>
+<a class="header-actions__link header-actions__cart" href="panier.html">
+          Panier <span class="cart-count">2</span>
+</a>
+</div>
+</div>
+</header>
+<main class="catalogue section">
+<div class="container">
+<h1 class="section__title">Bienvenue sur la boutique HUIZE SHOP</h1>
+<div class="catalogue__tools">
+<div class="catalogue__filters">
+<button class="filter-button is-active" type="button">Tous (8)</button>
+<button class="filter-button" type="button">Baskets (4)</button>
+<button class="filter-button" type="button">Sandales (2)</button>
+<button class="filter-button" type="button">Vêtements (2)</button>
+</div>
+<div class="catalogue__search">
+<label class="field__label" for="product-search">Rechercher un produit</label>
+<input class="field__input" id="product-search" placeholder="Ex. : baskets, sandales..." type="search"/>
+</div>
+<div class="catalogue__sort">
+<label class="field__label" for="product-sort">Trier par</label>
+<select class="field__select" id="product-sort">
+<option value="default">Sélection HUIZE</option>
+<option value="newest">Nouveautés d'abord</option>
+<option value="price-asc">Prix croissant</option>
+<option value="price-desc">Prix décroissant</option>
+</select>
+</div>
+</div>
+<div class="product-grid">
+<article class="product-card">
+<div class="product-card__media">
+<span class="product-card__badge">Nouveau</span>
+<img alt="Sneaker Velocity" class="product-card__image" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+</div>
+<div class="product-card__body">
+<span class="product-card__category">Baskets</span>
+<h3 class="product-card__name">Sneaker Urbaine Velocity Red</h3>
+<div class="availability">En stock (39 - 45)</div>
+<div class="product-card__price">
+<span class="price price--current">22 500 F CFA</span>
+<span class="price price--old">28 000 F CFA</span>
+</div>
+</div>
+<div class="product-card__actions">
+<a class="btn btn--primary" href="produit.html">Commander</a>
+</div>
+</article>
+<article class="product-card">
+<div class="product-card__media">
+<span class="product-card__badge product-card__badge--promo">Promo</span>
+<img alt="Canvas Classic" class="product-card__image" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+</div>
+<div class="product-card__body">
+<span class="product-card__category">Baskets</span>
+<h3 class="product-card__name">Sneaker Canvas Low Black &amp; White</h3>
+<div class="availability">En stock (40 - 44)</div>
+<div class="product-card__price">
+<span class="price price--current">18 000 F CFA</span>
+</div>
+</div>
+<div class="product-card__actions">
+<a class="btn btn--primary" href="produit.html">Commander</a>
+</div>
+</article>
+<article class="product-card">
+<div class="product-card__media">
+<img alt="Air Retro" class="product-card__image" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+</div>
+<div class="product-card__body">
+<span class="product-card__category">Baskets</span>
+<h3 class="product-card__name">Air Retro Color Block Pastel</h3>
+<div class="availability">En stock (38 - 43)</div>
+<div class="product-card__price">
+<span class="price price--current">26 000 F CFA</span>
+</div>
+</div>
+<div class="product-card__actions">
+<a class="btn btn--primary" href="produit.html">Commander</a>
+</div>
+</article>
+<article class="product-card">
+<div class="product-card__media">
+<img alt="Chunky Sole" class="product-card__image" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+</div>
+<div class="product-card__body">
+<span class="product-card__category">Baskets</span>
+<h3 class="product-card__name">Basket Streetwear Chunky White</h3>
+<div class="availability">En stock (40 - 45)</div>
+<div class="product-card__price">
+<span class="price price--current">24 000 F CFA</span>
+</div>
+</div>
+<div class="product-card__actions">
+<a class="btn btn--primary" href="produit.html">Commander</a>
+</div>
+</article>
+<article class="product-card">
+<div class="product-card__media">
+<img alt="Sandale Cuir" class="product-card__image" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+</div>
+<div class="product-card__body">
+<span class="product-card__category">Sandales</span>
+<h3 class="product-card__name">Sandale Cuir Tressé Confort Sahel</h3>
+<div class="availability">En stock (40 - 44)</div>
+<div class="product-card__price">
+<span class="price price--current">15 000 F CFA</span>
+</div>
+</div>
+<div class="product-card__actions">
+<a class="btn btn--primary" href="produit.html">Commander</a>
+</div>
+</article>
+<article class="product-card">
+<div class="product-card__media">
+<img alt="Mule Cuir" class="product-card__image" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+</div>
+<div class="product-card__body">
+<span class="product-card__category">Sandales</span>
+<h3 class="product-card__name">Mule Homme Premium Double Boucle</h3>
+<div class="availability">En stock (39 - 45)</div>
+<div class="product-card__price">
+<span class="price price--current">16 500 F CFA</span>
+</div>
+</div>
+<div class="product-card__actions">
+<a class="btn btn--primary" href="produit.html">Commander</a>
+</div>
+</article>
+<article class="product-card">
+<div class="product-card__media">
+<img alt="T-Shirt Street" class="product-card__image" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+</div>
+<div class="product-card__body">
+<span class="product-card__category">Vêtements</span>
+<h3 class="product-card__name">T-shirt Coton Oversize HUIZE Signature</h3>
+<div class="availability">En stock (M, L, XL)</div>
+<div class="product-card__price">
+<span class="price price--current">12 500 F CFA</span>
+</div>
+</div>
+<div class="product-card__actions">
+<a class="btn btn--primary" href="produit.html">Commander</a>
+</div>
+</article>
+<article class="product-card">
+<div class="product-card__media">
+<img alt="Chemise Lin" class="product-card__image" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+</div>
+<div class="product-card__body">
+<span class="product-card__category">Vêtements</span>
+<h3 class="product-card__name">Chemise Légère Lin Décontractée</h3>
+<div class="availability">En stock (S, M, L, XL)</div>
+<div class="product-card__price">
+<span class="price price--current">14 000 F CFA</span>
+</div>
+</div>
+<div class="product-card__actions">
+<a class="btn btn--primary" href="produit.html">Commander</a>
+</div>
+</article>
+</div>
+</div>
+</main>
+<footer class="site-footer">
+<div class="site-footer__inner container">
+<section class="site-footer__brand">
+<h2 class="site-footer__brand-name">HUIZE SHOP</h2>
+<p class="site-footer__slogan">Ton style, ta signature</p>
+</section>
+<section class="site-footer__contact">
+<h2 class="site-footer__title">Contact</h2>
+<address>
+<p>Ouagadougou, Burkina Faso</p>
+<p>WhatsApp : +226 70 00 00 00</p>
+</address>
+</section>
+<nav class="site-footer__nav">
+<h2 class="site-footer__title">Catégories</h2>
+<ul class="site-footer__list">
+<li><a href="boutique.html?categorie=chaussures">Baskets</a></li>
+<li><a href="boutique.html?categorie=sandales">Sandales</a></li>
+<li><a href="boutique.html?categorie=vetements">Vêtements</a></li>
+</ul>
+</nav>
+<nav class="site-footer__nav">
+<h2 class="site-footer__title">Informations</h2>
+<ul class="site-footer__list">
+<li><a href="index.html#paiement-livraison">Paiement &amp; Livraison</a></li>
+<li><a href="contact.html">Nous écrire</a></li>
+</ul>
+</nav>
+</div>
+<p class="site-footer__copyright container">© 2025 HUIZE SHOP. Tous droits réservés.</p>
+</footer>
+</body>
+</html>

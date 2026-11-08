@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+:root {
+  --color-green-deep: #123B2A;
+  --color-green: #1F5A40;
+  --color-offwhite: #F8F7F2;
+  --color-white: #FFFFFF;
+  --color-text: #202720;
+  --color-muted: #6B726C;
+  --color-lemon: #D8F36A;
+  --color-border: #E1E3DA;
+  --color-surface-soft: #EFEFE6;
+  --color-danger: #9A2F2F;
+  --color-warning: #8A5A00;
+  --color-success: #1F5A40;
+  --font-body: 'Plus Jakarta Sans', "Segoe UI", Roboto, sans-serif;
+  --font-title: 'Playfair Display', Georgia, serif;
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--color-offwhite);
+  color: var(--color-text);
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, .font-title {
+  font-family: var(--font-title);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #F8F7F2;
+}
+::-webkit-scrollbar-thumb {
+  background: #C8CEC6;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #123B2A;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.animate-slide-up {
+  animation: slideUp 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
