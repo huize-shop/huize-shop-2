@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ShoppingBag, MessageCircle, Menu, X, ShieldCheck } from 'lucide-react';
+import { ShoppingBag, MessageCircle, Menu, X } from 'lucide-react';
 import { WHATSAPP_DISPLAY, getDirectWhatsAppUrl } from '../utils/whatsapp.ts';
 
 interface NavbarProps {
@@ -7,8 +7,8 @@ interface NavbarProps {
   setActiveTab: (tab: string) => void;
   cartCount: number;
   onOpenCart: () => void;
-  isAdminMode: boolean;
-  setIsAdminMode: (admin: boolean) => void;
+  isAdminMode?: boolean;
+  setIsAdminMode?: (admin: boolean) => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -31,20 +31,10 @@ export const Navbar: React.FC<NavbarProps> = ({
     <header className="sticky top-0 z-40 bg-white border-b border-[#E1E3DA] shadow-xs">
       {/* Top Banner Notice for WhatsApp Direct Ordering */}
       <div className="bg-[#123B2A] text-white text-xs py-1.5 px-4 text-center">
-        <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
-          <p className="truncate mx-auto">
-            🇧🇫 HUIZE SHOP Ouagadougou • Commandes directes &amp; assistance personnalisée sur WhatsApp :{' '}
-            <strong className="text-[#D8F36A] font-bold">{WHATSAPP_DISPLAY}</strong>
-          </p>
-          <button
-            onClick={() => setIsAdminMode(!isAdminMode)}
-            className="hidden sm:inline-flex items-center gap-1.5 text-[11px] bg-white/10 hover:bg-white/20 text-[#D8F36A] px-2.5 py-0.5 rounded-full transition-colors shrink-0"
-            title="Basculer vers le tableau de bord administrateur"
-          >
-            <ShieldCheck className="w-3.5 h-3.5" />
-            <span>{isAdminMode ? 'Mode Boutique' : 'Espace Admin'}</span>
-          </button>
-        </div>
+        <p className="truncate max-w-6xl mx-auto">
+          🇧🇫 HUIZE SHOP Ouagadougou • Commandes directes &amp; assistance personnalisée sur WhatsApp :{' '}
+          <strong className="text-[#D8F36A] font-bold">{WHATSAPP_DISPLAY}</strong>
+        </p>
       </div>
 
       {/* Main Header 3-Zone Contract */}
@@ -120,17 +110,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             }`}
           >
             Contact
-          </button>
-          <button
-            onClick={() => handleNavClick('admin')}
-            className={`px-2.5 py-1 text-xs font-semibold rounded-full transition-colors whitespace-nowrap cursor-pointer flex items-center gap-1 ${
-              activeTab === 'admin' || isAdminMode
-                ? 'bg-[#123B2A] text-[#D8F36A]'
-                : 'bg-[#EFEFE6] text-[#123B2A] hover:bg-[#123B2A] hover:text-[#D8F36A]'
-            }`}
-          >
-            <ShieldCheck className="w-3.5 h-3.5" />
-            <span>Admin</span>
           </button>
         </nav>
 
@@ -212,15 +191,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               📍 Contact &amp; Localisation Ouaga
             </button>
-            <div className="border-t border-[#E1E3DA] pt-2 mt-1">
-              <button
-                onClick={() => handleNavClick('admin')}
-                className="w-full text-left px-3 py-2 rounded-md font-semibold text-sm bg-[#123B2A] text-[#D8F36A] flex items-center justify-between"
-              >
-                <span>⚙️ Tableau de bord Administrateur</span>
-                <span className="text-xs bg-[#D8F36A] text-[#123B2A] px-2 py-0.5 rounded-full font-bold">Admin</span>
-              </button>
-            </div>
           </div>
         </div>
       )}

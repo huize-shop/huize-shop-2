@@ -5,9 +5,21 @@ import { getDirectWhatsAppUrl } from '../utils/whatsapp.ts';
 
 interface HeroProps {
   onExploreShop: () => void;
+  heroImage?: string;
+  heroTagline?: string;
+  heroTitle?: string;
+  heroSubtitle?: string;
 }
 
-export const Hero: React.FC<HeroProps> = ({ onExploreShop }) => {
+export const Hero: React.FC<HeroProps> = ({
+  onExploreShop,
+  heroImage,
+  heroTagline,
+  heroTitle,
+  heroSubtitle
+}) => {
+  const currentHeroImage = heroImage || HERO_IMAGE;
+
   return (
     <section className="relative overflow-hidden bg-radial from-[#1F5A40] via-[#123B2A] to-[#0A2318] text-white py-12 md:py-20">
       {/* Decorative ambient glow */}
@@ -19,16 +31,20 @@ export const Hero: React.FC<HeroProps> = ({ onExploreShop }) => {
           <div className="lg:col-span-7 flex flex-col items-start gap-5">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#D8F36A] text-[#123B2A] text-xs font-extrabold uppercase tracking-wider">
               <Sparkles className="w-3.5 h-3.5" />
-              <span>Ton style, ta signature</span>
+              <span>{heroTagline || 'Ton style, ta signature'}</span>
             </div>
 
             <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-5xl font-bold font-title text-white leading-tight">
-              Affirme ton style avec <span className="text-[#D8F36A]">HUIZE SHOP</span>
+              {heroTitle || (
+                <>
+                  Affirme ton style avec <span className="text-[#D8F36A]">HUIZE SHOP</span>
+                </>
+              )}
             </h1>
 
             <p className="text-base sm:text-lg text-white/90 max-w-xl leading-relaxed">
-              Baskets, sandales et vêtements tendance sélectionnés avec soin pour le quotidien et les grandes occasions
-              au Burkina Faso. Choisis tes articles, puis finalise ta commande directement sur WhatsApp en toute confiance.
+              {heroSubtitle ||
+                'Baskets, sandales et vêtements tendance sélectionnés avec soin pour le quotidien et les grandes occasions au Burkina Faso. Choisis tes articles, puis finalise ta commande directement sur WhatsApp en toute confiance.'}
             </p>
 
             {/* CTAs */}
@@ -73,8 +89,8 @@ export const Hero: React.FC<HeroProps> = ({ onExploreShop }) => {
           <div className="lg:col-span-5">
             <div className="relative mx-auto max-w-md lg:max-w-none rounded-2xl overflow-hidden border-2 border-white/20 shadow-2xl aspect-4/5 bg-[#123B2A]">
               <img
-                src={HERO_IMAGE}
-                alt="Lookbook Streetwear HUIZE SHOP Ouagadougou"
+                src={currentHeroImage}
+                alt="Lookbook HUIZE SHOP Ouagadougou"
                 className="w-full h-full object-cover object-top hover:scale-102 transition-transform duration-700"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent pointer-events-none" />

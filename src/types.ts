@@ -52,3 +52,21 @@ export interface ClientLead {
   phone: string;
   avatar: string;
 }
+
+export interface CarouselSlide {
+  id: number;
+  kicker: string;
+  title: string;
+  desc: string;
+  category: string;
+  image: string;
+  ctaText: string;
+}
+
+export interface SiteMediaConfig {
+  heroImage: string;
+  heroTagline?: string;
+  heroTitle?: string;
+  heroSubtitle?: string;
+  carouselSlides: CarouselSlide[];
+}

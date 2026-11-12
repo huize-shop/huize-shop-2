@@ -1,52 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowRight, ChevronLeft, ChevronRight } from 'lucide-react';
-import { VELOCITY_SNEAKER_IMG, SAHEL_SANDAL_IMG, STREET_TSHIRT_IMG } from '../data/initialData.ts';
+import { CarouselSlide } from '../types.ts';
+import { INITIAL_CAROUSEL_SLIDES } from '../data/initialData.ts';
 
 interface AdCarouselProps {
   onSelectCategory: (cat: string) => void;
+  slides?: CarouselSlide[];
 }
 
-interface Slide {
-  id: number;
-  kicker: string;
-  title: string;
-  desc: string;
-  category: string;
-  image: string;
-  ctaText: string;
-}
-
-export const AdCarousel: React.FC<AdCarouselProps> = ({ onSelectCategory }) => {
-  const slides: Slide[] = [
-    {
-      id: 1,
-      kicker: 'HUIZE SHOP • NOUVELLE COLLECTION',
-      title: 'Sneakers & Baskets Tendance 2025',
-      desc: 'Modèles exclusifs légers et amortissants adaptés au climat et aux rues de Ouagadougou.',
-      category: 'chaussures',
-      image: VELOCITY_SNEAKER_IMG,
-      ctaText: 'Explorer les baskets'
-    },
-    {
-      id: 2,
-      kicker: 'SAVOIR-FAIRE & CONFORT SAHEL',
-      title: 'Sandales & Mules en Cuir Véritable',
-      desc: 'Tressage artisanal et semelles ergonomiques pour un style traditionnel et moderne.',
-      category: 'sandales',
-      image: SAHEL_SANDAL_IMG,
-      ctaText: 'Découvrir les sandales'
-    },
-    {
-      id: 3,
-      kicker: 'STREETWEAR ÉLÉGANT & COTON PEIGNÉ',
-      title: 'T-Shirts & Chemises Décontractées',
-      desc: 'Matières naturelles respirantes pour rester au frais sans compromis sur l’allure.',
-      category: 'vetements',
-      image: STREET_TSHIRT_IMG,
-      ctaText: 'Voir la mode vêtements'
-    }
-  ];
-
+export const AdCarousel: React.FC<AdCarouselProps> = ({ onSelectCategory, slides: propSlides }) => {
+  const slides = propSlides && propSlides.length > 0 ? propSlides : INITIAL_CAROUSEL_SLIDES;
   const [current, setCurrent] = useState(0);
 
   useEffect(() => {

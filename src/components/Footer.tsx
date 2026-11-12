@@ -1,14 +1,15 @@
 import React from 'react';
-import { MessageCircle, ShieldCheck } from 'lucide-react';
+import { MessageCircle } from 'lucide-react';
 import { WHATSAPP_DISPLAY, getDirectWhatsAppUrl } from '../utils/whatsapp.ts';
 
 interface FooterProps {
   onNavigate: (tab: string) => void;
-  isAdminMode: boolean;
-  setIsAdminMode: (admin: boolean) => void;
+  onOpenAdminAuth?: () => void;
+  isAdminMode?: boolean;
+  setIsAdminMode?: (admin: boolean) => void;
 }
 
-export const Footer: React.FC<FooterProps> = ({ onNavigate, isAdminMode, setIsAdminMode }) => {
+export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenAdminAuth }) => {
   return (
     <footer className="bg-[#123B2A] text-white/90 border-t border-[#1F5A40]">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-12 lg:py-16">
@@ -84,7 +85,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, isAdminMode, setIsAd
             </ul>
           </div>
 
-          {/* Shop links & Admin Switcher */}
+          {/* Shop links */}
           <div className="md:col-span-2 text-xs sm:text-sm space-y-2">
             <h3 className="text-xs font-bold uppercase tracking-widest text-[#D8F36A] mb-3">
               Boutique
@@ -108,25 +109,40 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, isAdminMode, setIsAd
               </li>
               <li>
                 <button
-                  onClick={() => {
-                    setIsAdminMode(!isAdminMode);
-                    onNavigate('admin');
-                  }}
-                  className="inline-flex items-center gap-1 text-[#D8F36A] hover:underline font-semibold cursor-pointer pt-2"
+                  onClick={() => onNavigate('panier')}
+                  className="hover:text-[#D8F36A] transition-colors cursor-pointer"
                 >
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  <span>Tableau de bord Admin</span>
+                  Mon panier
                 </button>
               </li>
             </ul>
           </div>
         </div>
 
-        {/* Copyright */}
+        {/* Copyright & Discreet Merchant Access */}
         <div className="border-t border-white/10 mt-10 pt-6 flex flex-col sm:flex-row items-center justify-between text-xs text-white/60 gap-3">
           <p>© 2025 HUIZE SHOP. Tous droits réservés.</p>
-          <p className="flex items-center gap-1">
-            <span>Boutique en ligne Burkina Faso • WhatsApp : {WHATSAPP_DISPLAY}</span>
+          <p>
+            {onOpenAdminAuth ? (
+              <button
+                type="button"
+                onClick={onOpenAdminAuth}
+                className="text-inherit font-inherit select-none"
+                style={{
+                  all: 'unset',
+                  cursor: 'pointer',
+                  display: 'inline',
+                  color: 'inherit',
+                  font: 'inherit'
+                }}
+                title=""
+              >
+                Boutique
+              </button>
+            ) : (
+              'Boutique'
+            )}
+            {' '}en ligne Burkina Faso • WhatsApp : {WHATSAPP_DISPLAY}
           </p>
         </div>
       </div>

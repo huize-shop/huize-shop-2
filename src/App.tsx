@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Product, CartItem, Category, WhatsAppOrder, ClientLead } from './types.ts';
+import { Product, CartItem, Category, WhatsAppOrder, ClientLead, SiteMediaConfig } from './types.ts';
 import {
   loadStoredProducts,
   saveStoredProducts,
   loadStoredCategories,
   saveStoredCategories,
+  loadStoredMediaConfig,
+  saveStoredMediaConfig,
   INITIAL_ORDERS,
-  INITIAL_LEADS
+  INITIAL_LEADS,
+  INITIAL_MEDIA_CONFIG
 } from './data/initialData.ts';
 import {
   subscribeProducts,
@@ -19,6 +22,8 @@ import {
   saveOrderToDb,
   updateOrderStatusInDb,
   subscribeLeads,
+  subscribeMediaConfig,
+  saveMediaConfigToDb,
   testConnection
 } from './firebase.ts';
 import { Navbar } from './components/Navbar.tsx';
@@ -30,6 +35,7 @@ import { ProductDetailModal } from './components/ProductDetailModal.tsx';
 import { CartView } from './components/CartView.tsx';
 import { ContactView } from './components/ContactView.tsx';
 import { AdminDashboard } from './components/AdminDashboard.tsx';
+import { AdminAuthModal } from './components/AdminAuthModal.tsx';
 import { Reassurance } from './components/Reassurance.tsx';
 import { PaymentDelivery } from './components/PaymentDelivery.tsx';
 import { Footer } from './components/Footer.tsx';
@@ -40,12 +46,21 @@ export default function App() {
   // Navigation & View state
   const [activeTab, setActiveTab] = useState<string>('accueil');
   const [isAdminMode, setIsAdminMode] = useState<boolean>(false);
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem('huize_admin_auth') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [isAdminAuthModalOpen, setIsAdminAuthModalOpen] = useState<boolean>(false);
 
   // Products & Categories persistent state
   const [products, setProducts] = useState<Product[]>(loadStoredProducts);
   const [categories, setCategories] = useState<Category[]>(loadStoredCategories);
   const [orders, setOrders] = useState<WhatsAppOrder[]>(INITIAL_ORDERS);
   const [leads, setLeads] = useState<ClientLead[]>(INITIAL_LEADS);
+  const [mediaConfig, setMediaConfig] = useState<SiteMediaConfig>(loadStoredMediaConfig);
 
   // Cart state
   const [cart, setCart] = useState<CartItem[]>(() => {
@@ -103,11 +118,18 @@ export default function App() {
       }
     });
 
+    const unsubMedia = subscribeMediaConfig((config) => {
+      if (config) {
+        setMediaConfig(config);
+      }
+    });
+
     return () => {
       unsubProducts();
       unsubCategories();
       unsubOrders();
       unsubLeads();
+      unsubMedia();
     };
   }, []);
 
@@ -120,6 +142,11 @@ export default function App() {
   useEffect(() => {
     saveStoredCategories(categories);
   }, [categories]);
+
+  // Fallback cache mediaConfig to localStorage
+  useEffect(() => {
+    saveStoredMediaConfig(mediaConfig);
+  }, [mediaConfig]);
 
   // Sync cart to localStorage
   useEffect(() => {
@@ -221,17 +248,22 @@ export default function App() {
       ...newProd,
       id: `prod-${Date.now()}`
     };
-    setProducts((prev) => [created, ...prev]);
+    const updatedList = [created, ...products];
+    setProducts(updatedList);
+    saveStoredProducts(updatedList);
     showToast(`✨ Article "${created.name}" publié et enregistré en base !`);
     try {
       await saveProductToDb(created);
     } catch (e) {
       console.error('Failed to save product in Firestore', e);
+      showToast('⚠️ Erreur enregistrement base de données');
     }
   };
 
   const handleUpdateProduct = async (updated: Product) => {
-    setProducts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+    const updatedList = products.map((p) => (p.id === updated.id ? updated : p));
+    setProducts(updatedList);
+    saveStoredProducts(updatedList);
     showToast(`Modifications enregistrées en base pour "${updated.name}"`);
     try {
       await saveProductToDb(updated);
@@ -241,7 +273,9 @@ export default function App() {
   };
 
   const handleDeleteProduct = async (id: string) => {
-    setProducts((prev) => prev.filter((p) => p.id !== id));
+    const updatedList = products.filter((p) => p.id !== id);
+    setProducts(updatedList);
+    saveStoredProducts(updatedList);
     showToast('Article supprimé de la base de données');
     try {
       await deleteProductFromDb(id);
@@ -297,6 +331,67 @@ export default function App() {
     }
   };
 
+  const handleUpdateMediaConfig = async (newConfig: SiteMediaConfig) => {
+    setMediaConfig(newConfig);
+    showToast("✨ Photos et bannières d'accueil enregistrées !");
+    try {
+      await saveMediaConfigToDb(newConfig);
+    } catch (e) {
+      console.error('Failed to save media config to Firestore', e);
+    }
+  };
+
+  // Synchronize Tab changes
+  // Discreet merchant trigger via #admin URL or keyboard shortcut Ctrl+Shift+A
+  useEffect(() => {
+    const checkHashOrQuery = () => {
+      const hash = window.location.hash;
+      const search = window.location.search;
+      if (hash === '#admin' || search.includes('admin=')) {
+        if (isAdminAuthenticated) {
+          setIsAdminMode(true);
+          setActiveTab('admin');
+        } else {
+          setIsAdminAuthModalOpen(true);
+        }
+      }
+    };
+
+    checkHashOrQuery();
+    window.addEventListener('hashchange', checkHashOrQuery);
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'A' || e.key === 'a')) {
+        e.preventDefault();
+        if (isAdminAuthenticated) {
+          setIsAdminMode((prev) => !prev);
+          setActiveTab((prev) => (prev === 'admin' ? 'accueil' : 'admin'));
+        } else {
+          setIsAdminAuthModalOpen(true);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('hashchange', checkHashOrQuery);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isAdminAuthenticated]);
+
+  const handleAdminAuthSuccess = () => {
+    try {
+      sessionStorage.setItem('huize_admin_auth', 'true');
+    } catch (e) {
+      console.error(e);
+    }
+    setIsAdminAuthenticated(true);
+    setIsAdminAuthModalOpen(false);
+    setIsAdminMode(true);
+    setActiveTab('admin');
+    showToast('🔓 Accès Espace Commerçant déverrouillé');
+  };
+
   // Synchronize Tab changes
   const handleTabChange = (tab: string) => {
     if (tab === 'baskets') {
@@ -312,8 +407,12 @@ export default function App() {
       setShopCategoryFilter('vetements');
       setIsAdminMode(false);
     } else if (tab === 'admin') {
-      setIsAdminMode(true);
-      setActiveTab('admin');
+      if (isAdminAuthenticated) {
+        setIsAdminMode(true);
+        setActiveTab('admin');
+      } else {
+        setIsAdminAuthModalOpen(true);
+      }
     } else {
       setActiveTab(tab);
       setIsAdminMode(false);
@@ -353,14 +452,16 @@ export default function App() {
 
   const cartTotalCount = cart.reduce((acc, i) => acc + i.quantity, 0);
 
-  // If in admin mode, show dashboard
-  if (isAdminMode || activeTab === 'admin') {
+  // If in admin mode AND authenticated, show dashboard
+  if ((isAdminMode || activeTab === 'admin') && isAdminAuthenticated) {
     return (
       <AdminDashboard
         products={products}
         categories={categories}
         orders={orders}
         leads={leads}
+        mediaConfig={mediaConfig}
+        onUpdateMediaConfig={handleUpdateMediaConfig}
         onAddProduct={handleAddProduct}
         onUpdateProduct={handleUpdateProduct}
         onDeleteProduct={handleDeleteProduct}
@@ -370,6 +471,23 @@ export default function App() {
         onExitAdmin={() => {
           setIsAdminMode(false);
           setActiveTab('accueil');
+          if (window.location.hash === '#admin') {
+            window.history.replaceState(null, '', window.location.pathname);
+          }
+        }}
+        onLogout={() => {
+          try {
+            sessionStorage.removeItem('huize_admin_auth');
+          } catch (e) {
+            console.error(e);
+          }
+          setIsAdminAuthenticated(false);
+          setIsAdminMode(false);
+          setActiveTab('accueil');
+          if (window.location.hash === '#admin') {
+            window.history.replaceState(null, '', window.location.pathname);
+          }
+          showToast('🔒 Session administrateur verrouillée');
         }}
       />
     );
@@ -403,6 +521,10 @@ export default function App() {
         {activeTab === 'accueil' && (
           <>
             <Hero
+              heroImage={mediaConfig.heroImage}
+              heroTagline={mediaConfig.heroTagline}
+              heroTitle={mediaConfig.heroTitle}
+              heroSubtitle={mediaConfig.heroSubtitle}
               onExploreShop={() => {
                 setActiveTab('boutique');
                 setShopCategoryFilter('all');
@@ -411,6 +533,7 @@ export default function App() {
             />
 
             <AdCarousel
+              slides={mediaConfig.carouselSlides}
               onSelectCategory={(cat) => {
                 setActiveTab('boutique');
                 setShopCategoryFilter(cat);
@@ -442,10 +565,10 @@ export default function App() {
                 {/* Filters & Tools Bar */}
                 <div className="bg-[#FAF9F5] border border-[#E1E3DA] rounded-2xl p-4 sm:p-5 mb-8 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
                   {/* Category Filter Chips */}
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap scrollbar-none">
                     <button
                       onClick={() => setShopCategoryFilter('all')}
-                      className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                      className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                         shopCategoryFilter === 'all'
                           ? 'bg-[#123B2A] text-white shadow-xs'
                           : 'bg-white border border-[#E1E3DA] text-[#123B2A] hover:bg-[#EFEFE6]'
@@ -459,7 +582,7 @@ export default function App() {
                         <button
                           key={c.id}
                           onClick={() => setShopCategoryFilter(c.slug)}
-                          className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                          className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                             shopCategoryFilter === c.slug
                               ? 'bg-[#123B2A] text-white shadow-xs'
                               : 'bg-white border border-[#E1E3DA] text-[#123B2A] hover:bg-[#EFEFE6]'
@@ -559,10 +682,10 @@ export default function App() {
 
             {/* Filter Tools */}
             <div className="bg-white border border-[#E1E3DA] rounded-2xl p-4 sm:p-5 mb-8 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
-              <div className="flex flex-wrap gap-2">
+              <div className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap scrollbar-none">
                 <button
                   onClick={() => setShopCategoryFilter('all')}
-                  className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                     shopCategoryFilter === 'all'
                       ? 'bg-[#123B2A] text-white'
                       : 'bg-[#FAF9F5] border border-[#E1E3DA] text-[#123B2A] hover:bg-[#EFEFE6]'
@@ -576,7 +699,7 @@ export default function App() {
                     <button
                       key={c.id}
                       onClick={() => setShopCategoryFilter(c.slug)}
-                      className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                      className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                         shopCategoryFilter === c.slug
                           ? 'bg-[#123B2A] text-white'
                           : 'bg-[#FAF9F5] border border-[#E1E3DA] text-[#123B2A] hover:bg-[#EFEFE6]'
@@ -671,8 +794,26 @@ export default function App() {
       {/* Footer */}
       <Footer
         onNavigate={handleTabChange}
-        isAdminMode={isAdminMode}
-        setIsAdminMode={setIsAdminMode}
+        onOpenAdminAuth={() => {
+          if (isAdminAuthenticated) {
+            setIsAdminMode(true);
+            setActiveTab('admin');
+          } else {
+            setIsAdminAuthModalOpen(true);
+          }
+        }}
+      />
+
+      {/* Admin Authentication Passcode Modal */}
+      <AdminAuthModal
+        isOpen={isAdminAuthModalOpen}
+        onClose={() => {
+          setIsAdminAuthModalOpen(false);
+          if (window.location.hash === '#admin') {
+            window.history.replaceState(null, '', window.location.pathname);
+          }
+        }}
+        onSuccess={handleAdminAuthSuccess}
       />
     </div>
   );

@@ -11,8 +11,14 @@ import {
   updateDoc
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
-import { Product, Category, WhatsAppOrder, ClientLead } from './types.ts';
-import { INITIAL_PRODUCTS, INITIAL_CATEGORIES, INITIAL_ORDERS, INITIAL_LEADS } from './data/initialData.ts';
+import { Product, Category, WhatsAppOrder, ClientLead, SiteMediaConfig } from './types.ts';
+import {
+  INITIAL_PRODUCTS,
+  INITIAL_CATEGORIES,
+  INITIAL_ORDERS,
+  INITIAL_LEADS,
+  INITIAL_MEDIA_CONFIG
+} from './data/initialData.ts';
 
 // Initialize Firebase App
 const app = initializeApp(firebaseConfig);
@@ -74,6 +80,23 @@ export async function testConnection(): Promise<boolean> {
   }
 }
 
+// Utility to recursively sanitize data objects and remove any undefined fields before writing to Firestore
+export function sanitizeForFirestore<T>(data: T): T {
+  if (data === null || typeof data !== 'object') {
+    return data;
+  }
+  if (Array.isArray(data)) {
+    return data.map((item) => sanitizeForFirestore(item)) as unknown as T;
+  }
+  const sanitized: Record<string, any> = {};
+  for (const [key, value] of Object.entries(data as Record<string, any>)) {
+    if (value !== undefined) {
+      sanitized[key] = sanitizeForFirestore(value);
+    }
+  }
+  return sanitized as T;
+}
+
 // --- PRODUCTS SUBSCRIPTION & SYNC ---
 export function subscribeProducts(onData: (products: Product[]) => void) {
   const colRef = collection(db, 'products');
@@ -84,7 +107,7 @@ export function subscribeProducts(onData: (products: Product[]) => void) {
         // Seed initial products into Firestore if completely empty
         INITIAL_PRODUCTS.forEach(async (p) => {
           try {
-            await setDoc(doc(db, 'products', p.id), p);
+            await setDoc(doc(db, 'products', p.id), sanitizeForFirestore(p));
           } catch (e) {
             handleFirestoreError(e, OperationType.WRITE, `products/${p.id}`);
           }
@@ -94,6 +117,15 @@ export function subscribeProducts(onData: (products: Product[]) => void) {
         const list: Product[] = [];
         snapshot.forEach((d) => {
           list.push(d.data() as Product);
+        });
+        // Ensure user-added products (prod-<timestamp>) appear first, sorted by newest
+        list.sort((a, b) => {
+          const aIsNew = a.id.startsWith('prod-1');
+          const bIsNew = b.id.startsWith('prod-1');
+          if (aIsNew && !bIsNew) return -1;
+          if (!aIsNew && bIsNew) return 1;
+          if (aIsNew && bIsNew) return b.id.localeCompare(a.id);
+          return 0;
         });
         onData(list);
       }
@@ -107,7 +139,8 @@ export function subscribeProducts(onData: (products: Product[]) => void) {
 export async function saveProductToDb(product: Product): Promise<void> {
   const path = `products/${product.id}`;
   try {
-    await setDoc(doc(db, 'products', product.id), product);
+    const cleanProduct = sanitizeForFirestore(product);
+    await setDoc(doc(db, 'products', product.id), cleanProduct);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
     throw error;
@@ -155,7 +188,8 @@ export function subscribeCategories(onData: (categories: Category[]) => void) {
 
 export async function saveCategoryToDb(category: Category): Promise<void> {
   try {
-    await setDoc(doc(db, 'categories', category.id), category);
+    const cleanCat = sanitizeForFirestore(category);
+    await setDoc(doc(db, 'categories', category.id), cleanCat);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `categories/${category.id}`);
     throw error;
@@ -180,7 +214,7 @@ export function subscribeOrders(onData: (orders: WhatsAppOrder[]) => void) {
       if (snapshot.empty) {
         INITIAL_ORDERS.forEach(async (o) => {
           try {
-            await setDoc(doc(db, 'orders', o.id), o);
+            await setDoc(doc(db, 'orders', o.id), sanitizeForFirestore(o));
           } catch (e) {
             handleFirestoreError(e, OperationType.WRITE, `orders/${o.id}`);
           }
@@ -202,7 +236,8 @@ export function subscribeOrders(onData: (orders: WhatsAppOrder[]) => void) {
 
 export async function saveOrderToDb(order: WhatsAppOrder): Promise<void> {
   try {
-    await setDoc(doc(db, 'orders', order.id), order);
+    const cleanOrder = sanitizeForFirestore(order);
+    await setDoc(doc(db, 'orders', order.id), cleanOrder);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `orders/${order.id}`);
     throw error;
@@ -236,7 +271,7 @@ export function subscribeLeads(onData: (leads: ClientLead[]) => void) {
       if (snapshot.empty) {
         INITIAL_LEADS.forEach(async (l) => {
           try {
-            await setDoc(doc(db, 'leads', l.id), l);
+            await setDoc(doc(db, 'leads', l.id), sanitizeForFirestore(l));
           } catch (e) {
             handleFirestoreError(e, OperationType.WRITE, `leads/${l.id}`);
           }
@@ -255,3 +290,37 @@ export function subscribeLeads(onData: (leads: ClientLead[]) => void) {
     }
   );
 }
+
+// --- SITE MEDIA & HOMEPAGE BANNER CONFIG ---
+export function subscribeMediaConfig(onData: (config: SiteMediaConfig) => void) {
+  const docRef = doc(db, 'settings', 'media');
+  return onSnapshot(
+    docRef,
+    (snapshot) => {
+      if (snapshot.exists()) {
+        onData(snapshot.data() as SiteMediaConfig);
+      } else {
+        // Seed initial media configuration if not present
+        setDoc(docRef, sanitizeForFirestore(INITIAL_MEDIA_CONFIG)).catch((e) =>
+          handleFirestoreError(e, OperationType.WRITE, 'settings/media')
+        );
+        onData(INITIAL_MEDIA_CONFIG);
+      }
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.GET, 'settings/media');
+    }
+  );
+}
+
+export async function saveMediaConfigToDb(config: SiteMediaConfig): Promise<void> {
+  const path = 'settings/media';
+  try {
+    const cleanMedia = sanitizeForFirestore(config);
+    await setDoc(doc(db, 'settings', 'media'), cleanMedia);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+    throw error;
+  }
+}
+

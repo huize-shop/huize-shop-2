@@ -1,4 +1,4 @@
-import { Category, ClientLead, Product, WhatsAppOrder } from '../types.ts';
+import { Category, ClientLead, Product, WhatsAppOrder, SiteMediaConfig, CarouselSlide } from '../types.ts';
 
 export const HERO_IMAGE = '/src/assets/images/hero_fashion_burkina_1794167660891.jpg';
 export const VELOCITY_SNEAKER_IMG = '/src/assets/images/product_velocity_sneakers_1794167661807.jpg';
@@ -300,3 +300,63 @@ export function saveStoredCategories(categories: Category[]): void {
     console.error('Failed to save categories', e);
   }
 }
+
+export const INITIAL_CAROUSEL_SLIDES: CarouselSlide[] = [
+  {
+    id: 1,
+    kicker: 'HUIZE SHOP • NOUVELLE COLLECTION',
+    title: 'Sneakers & Baskets Tendance 2025',
+    desc: 'Modèles exclusifs légers et amortissants adaptés au climat et aux rues de Ouagadougou.',
+    category: 'chaussures',
+    image: VELOCITY_SNEAKER_IMG,
+    ctaText: 'Explorer les baskets'
+  },
+  {
+    id: 2,
+    kicker: 'SAVOIR-FAIRE & CONFORT SAHEL',
+    title: 'Sandales & Mules en Cuir Véritable',
+    desc: 'Tressage artisanal et semelles ergonomiques pour un style traditionnel et moderne.',
+    category: 'sandales',
+    image: SAHEL_SANDAL_IMG,
+    ctaText: 'Découvrir les sandales'
+  },
+  {
+    id: 3,
+    kicker: 'STREETWEAR ÉLÉGANT & COTON PEIGNÉ',
+    title: 'T-Shirts & Chemises Décontractées',
+    desc: 'Matières naturelles respirantes pour rester au frais sans compromis sur l’allure.',
+    category: 'vetements',
+    image: STREET_TSHIRT_IMG,
+    ctaText: 'Voir la mode vêtements'
+  }
+];
+
+export const INITIAL_MEDIA_CONFIG: SiteMediaConfig = {
+  heroImage: HERO_IMAGE,
+  heroTagline: 'Ton style, ta signature',
+  heroTitle: 'Affirme ton style avec HUIZE SHOP',
+  heroSubtitle:
+    'Baskets, sandales et vêtements tendance sélectionnés avec soin pour le quotidien et les grandes occasions au Burkina Faso. Choisis tes articles, puis finalise ta commande directement sur WhatsApp en toute confiance.',
+  carouselSlides: INITIAL_CAROUSEL_SLIDES
+};
+
+export const MEDIA_STORAGE_KEY = 'huize_shop_media_config_v1';
+
+export function loadStoredMediaConfig(): SiteMediaConfig {
+  try {
+    const raw = localStorage.getItem(MEDIA_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    console.error('Failed to load media config from storage', e);
+  }
+  return INITIAL_MEDIA_CONFIG;
+}
+
+export function saveStoredMediaConfig(config: SiteMediaConfig): void {
+  try {
+    localStorage.setItem(MEDIA_STORAGE_KEY, JSON.stringify(config));
+  } catch (e) {
+    console.error('Failed to save media config to storage', e);
+  }
+}
+

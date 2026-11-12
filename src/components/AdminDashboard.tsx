@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Product, Category, WhatsAppOrder, ClientLead } from '../types.ts';
+import { Product, Category, WhatsAppOrder, ClientLead, SiteMediaConfig, CarouselSlide } from '../types.ts';
+import { INITIAL_CAROUSEL_SLIDES } from '../data/initialData.ts';
 import { formatFCFA, WHATSAPP_DISPLAY } from '../utils/whatsapp.ts';
 import {
   LayoutDashboard,
@@ -18,7 +19,10 @@ import {
   TrendingUp,
   AlertCircle,
   Upload,
-  Image as ImageIcon
+  Image as ImageIcon,
+  LogOut,
+  Save,
+  Sparkles
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -26,6 +30,8 @@ interface AdminDashboardProps {
   categories: Category[];
   orders: WhatsAppOrder[];
   leads: ClientLead[];
+  mediaConfig: SiteMediaConfig;
+  onUpdateMediaConfig: (config: SiteMediaConfig) => void;
   onAddProduct: (product: Omit<Product, 'id'>) => void;
   onUpdateProduct: (product: Product) => void;
   onDeleteProduct: (id: string) => void;
@@ -33,6 +39,7 @@ interface AdminDashboardProps {
   onDeleteCategory: (id: string) => void;
   onUpdateOrderStatus: (orderId: string, status: WhatsAppOrder['status']) => void;
   onExitAdmin: () => void;
+  onLogout?: () => void;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -40,15 +47,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   categories,
   orders,
   leads,
+  mediaConfig,
+  onUpdateMediaConfig,
   onAddProduct,
   onUpdateProduct,
   onDeleteProduct,
   onAddCategory,
   onDeleteCategory,
   onUpdateOrderStatus,
-  onExitAdmin
+  onExitAdmin,
+  onLogout
 }) => {
-  const [activeSection, setActiveSection] = useState<'dashboard' | 'catalogue' | 'categories' | 'clients' | 'commandes'>('dashboard');
+  const [activeSection, setActiveSection] = useState<'dashboard' | 'catalogue' | 'categories' | 'medias' | 'clients' | 'commandes'>('dashboard');
 
   // Filters
   const [productSearch, setProductSearch] = useState('');
@@ -69,7 +79,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [formRef, setFormRef] = useState('HZ-B05');
   const [formDesc, setFormDesc] = useState('');
   const [formImages, setFormImages] = useState<string[]>(['/src/assets/images/product_velocity_sneakers_1794167661807.jpg']);
+  const [manualImageUrl, setManualImageUrl] = useState('');
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [isAnalyzingAi, setIsAnalyzingAi] = useState(false);
+  const [aiAnalysisError, setAiAnalysisError] = useState<string | null>(null);
+  const [aiSuccessMessage, setAiSuccessMessage] = useState<string | null>(null);
 
   // Compress and convert uploaded image files to base64 Data URLs for direct Firestore storage
   const handleFileUpload = (files: FileList | null) => {
@@ -113,6 +127,145 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [newCatName, setNewCatName] = useState('');
   const [newCatIcon, setNewCatIcon] = useState('🎒');
 
+  // Media & Home Banner State (Hero photo and scrolling carousel products)
+  const [heroImg, setHeroImg] = useState<string>(
+    mediaConfig?.heroImage || '/src/assets/images/hero_fashion_burkina_1794167660891.jpg'
+  );
+  const [heroTagline, setHeroTagline] = useState<string>(
+    mediaConfig?.heroTagline || 'Ton style, ta signature'
+  );
+  const [heroTitle, setHeroTitle] = useState<string>(
+    mediaConfig?.heroTitle || 'Affirme ton style avec HUIZE SHOP'
+  );
+  const [heroSubtitle, setHeroSubtitle] = useState<string>(
+    mediaConfig?.heroSubtitle ||
+      'Baskets, sandales et vêtements tendance sélectionnés avec soin pour le quotidien et les grandes occasions au Burkina Faso. Choisis tes articles, puis finalise ta commande directement sur WhatsApp en toute confiance.'
+  );
+  const [carouselSlides, setCarouselSlides] = useState<CarouselSlide[]>(
+    mediaConfig?.carouselSlides && mediaConfig.carouselSlides.length > 0
+      ? mediaConfig.carouselSlides
+      : INITIAL_CAROUSEL_SLIDES
+  );
+  const [isSavingMedia, setIsSavingMedia] = useState(false);
+  const [isUploadingHero, setIsUploadingHero] = useState(false);
+  const [uploadingSlideIdx, setUploadingSlideIdx] = useState<number | null>(null);
+
+  React.useEffect(() => {
+    if (mediaConfig) {
+      if (mediaConfig.heroImage) setHeroImg(mediaConfig.heroImage);
+      if (mediaConfig.heroTagline) setHeroTagline(mediaConfig.heroTagline);
+      if (mediaConfig.heroTitle) setHeroTitle(mediaConfig.heroTitle);
+      if (mediaConfig.heroSubtitle) setHeroSubtitle(mediaConfig.heroSubtitle);
+      if (mediaConfig.carouselSlides && mediaConfig.carouselSlides.length > 0) {
+        setCarouselSlides(mediaConfig.carouselSlides);
+      }
+    }
+  }, [mediaConfig]);
+
+  const handleHeroFileUpload = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setIsUploadingHero(true);
+    const file = files[0];
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        const maxDim = 950;
+        if (width > height && width > maxDim) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else if (height > maxDim) {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressed = canvas.toDataURL('image/jpeg', 0.85);
+          setHeroImg(compressed);
+        }
+        setIsUploadingHero(false);
+      };
+      img.src = e.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSlideFileUpload = (slideIdx: number, files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setUploadingSlideIdx(slideIdx);
+    const file = files[0];
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        const maxDim = 950;
+        if (width > height && width > maxDim) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else if (height > maxDim) {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressed = canvas.toDataURL('image/jpeg', 0.85);
+          setCarouselSlides((prev) =>
+            prev.map((s, idx) => (idx === slideIdx ? { ...s, image: compressed } : s))
+          );
+        }
+        setUploadingSlideIdx(null);
+      };
+      img.src = e.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveMediaConfig = async () => {
+    setIsSavingMedia(true);
+    const newConfig: SiteMediaConfig = {
+      heroImage: heroImg,
+      heroTagline,
+      heroTitle,
+      heroSubtitle,
+      carouselSlides
+    };
+    try {
+      await onUpdateMediaConfig(newConfig);
+    } finally {
+      setIsSavingMedia(false);
+    }
+  };
+
+  const handleAddCarouselSlide = () => {
+    const newSlide: CarouselSlide = {
+      id: Date.now(),
+      kicker: 'NOUVELLE EXCLUSIVITÉ HUIZE',
+      title: 'Nouvelle Offre Tendance 2025',
+      desc: 'Article sélectionné pour son confort et son style unique à Ouagadougou.',
+      category: categories[0]?.slug || 'chaussures',
+      image: '/src/assets/images/product_velocity_sneakers_1794167661807.jpg',
+      ctaText: 'Découvrir en boutique'
+    };
+    setCarouselSlides((prev) => [...prev, newSlide]);
+  };
+
+  const handleDeleteCarouselSlide = (idx: number) => {
+    if (carouselSlides.length <= 1) return;
+    setCarouselSlides((prev) => prev.filter((_, i) => i !== idx));
+  };
+
   // Price adjustment prompt modal
   const [adjustingPriceProduct, setAdjustingPriceProduct] = useState<Product | null>(null);
   const [newAdjustedPrice, setNewAdjustedPrice] = useState<string>('');
@@ -129,6 +282,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setFormRef(`HZ-${Math.floor(100 + Math.random() * 900)}`);
     setFormDesc('Article haute qualité certifié HUIZE SHOP disponible à Ouagadougou.');
     setFormImages(['/src/assets/images/product_velocity_sneakers_1794167661807.jpg']);
+    setManualImageUrl('');
+    setAiAnalysisError(null);
+    setAiSuccessMessage(null);
     setIsModalOpen(true);
   };
 
@@ -144,6 +300,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setFormRef(prod.ref);
     setFormDesc(prod.description);
     setFormImages(prod.images && prod.images.length ? prod.images : ['/src/assets/images/product_velocity_sneakers_1794167661807.jpg']);
+    setManualImageUrl('');
+    setAiAnalysisError(null);
+    setAiSuccessMessage(null);
     setIsModalOpen(true);
   };
 
@@ -156,9 +315,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
     const targetCategory = categories.find((c) => c.slug === formCategory);
     const categoryLabel = targetCategory ? targetCategory.name : formCategory;
-    const finalImages = formImages.length > 0 
-      ? formImages 
+    
+    // Include any manual image URL entered in the input
+    const imagesToUse = [...formImages];
+    if (manualImageUrl.trim() && !imagesToUse.includes(manualImageUrl.trim())) {
+      imagesToUse.push(manualImageUrl.trim());
+    }
+
+    const finalImages = imagesToUse.length > 0 
+      ? imagesToUse 
       : ['/src/assets/images/product_velocity_sneakers_1794167661807.jpg'];
+
+    const parsedOldPrice = formOldPrice && formOldPrice.trim() !== '' 
+      ? parseInt(formOldPrice, 10) 
+      : undefined;
 
     if (editingProduct) {
       onUpdateProduct({
@@ -167,7 +337,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         category: formCategory,
         categoryLabel,
         price: parseInt(formPrice, 10) || 0,
-        oldPrice: formOldPrice ? parseInt(formOldPrice, 10) : undefined,
+        oldPrice: parsedOldPrice,
         badge: formBadge,
         sizes: sizesArray.length ? sizesArray : ['Standard'],
         stock: parseInt(formStock, 10) || 0,
@@ -181,7 +351,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         category: formCategory,
         categoryLabel,
         price: parseInt(formPrice, 10) || 15000,
-        oldPrice: formOldPrice ? parseInt(formOldPrice, 10) : undefined,
+        oldPrice: parsedOldPrice,
         badge: formBadge,
         sizes: sizesArray.length ? sizesArray : ['40', '41', '42'],
         stock: parseInt(formStock, 10) || 5,
@@ -192,7 +362,54 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       });
     }
 
+    setManualImageUrl('');
     setIsModalOpen(false);
+  };
+
+  // AI Product Vision Analysis Trigger
+  const handleAnalyzeWithAi = async () => {
+    const targetImage = (formImages && formImages.length > 0 ? formImages[0] : null) || manualImageUrl.trim();
+    if (!targetImage) {
+      setAiAnalysisError("Veuillez d'abord importer une photo ou coller un lien d'image pour permettre l'analyse.");
+      return;
+    }
+
+    setIsAnalyzingAi(true);
+    setAiAnalysisError(null);
+    setAiSuccessMessage(null);
+
+    try {
+      const res = await fetch('/api/ai/analyze-product', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: targetImage })
+      });
+
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        if (json.needsKey) {
+          throw new Error("Clé API Gemini requise dans le panneau Settings > Secrets d'AI Studio pour activer l'analyse IA.");
+        }
+        throw new Error(json.error || "Impossible d'analyser l'image pour le moment.");
+      }
+
+      const data = json.data;
+      if (data.name) setFormName(data.name);
+      if (data.category) setFormCategory(data.category);
+      if (data.price) setFormPrice(data.price.toString());
+      if (data.oldPrice) setFormOldPrice(data.oldPrice.toString());
+      if (data.badge) setFormBadge(data.badge);
+      if (data.sizes) setFormSizes(data.sizes);
+      if (data.description) setFormDesc(data.description);
+      if (data.ref) setFormRef(data.ref);
+
+      setAiSuccessMessage(`✨ Analyse IA réussie : "${data.name}" détecté avec estimation du prix marché à ${data.price} F CFA.`);
+    } catch (err: any) {
+      console.error('AI Analysis failed:', err);
+      setAiAnalysisError(err.message || "Erreur lors de l'analyse IA de l'image.");
+    } finally {
+      setIsAnalyzingAi(false);
+    }
   };
 
   const handleSavePriceAdjustment = () => {
@@ -295,6 +512,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </button>
 
           <button
+            onClick={() => setActiveSection('medias')}
+            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-left transition-colors cursor-pointer ${
+              activeSection === 'medias'
+                ? 'bg-[#1F5A40] text-white font-bold shadow-xs'
+                : 'text-white/80 hover:bg-white/10 hover:text-[#D8F36A]'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <ImageIcon className="w-4 h-4 text-[#D8F36A]" />
+              <span>Accueil &amp; Bannières</span>
+            </div>
+            <span className="bg-[#D8F36A]/20 text-[#D8F36A] text-[10px] font-bold px-2 py-0.5 rounded-full">
+              Hero + {carouselSlides.length}
+            </span>
+          </button>
+
+          <button
             onClick={() => setActiveSection('clients')}
             className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-left transition-colors cursor-pointer ${
               activeSection === 'clients'
@@ -346,10 +580,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <div className="w-9 h-9 rounded-full bg-[#D8F36A] text-[#123B2A] font-bold flex items-center justify-center text-xs">
             HZ
           </div>
-          <div className="truncate">
-            <p className="text-xs font-bold text-white truncate">Gestionnaire HUIZE</p>
-            <p className="text-[10px] text-white/60">Ouagadougou • {WHATSAPP_DISPLAY}</p>
+          <div className="truncate flex-1">
+            <p className="text-xs font-bold text-white truncate">hugosazizegansonre@gmail.com</p>
+            <p className="text-[10px] text-white/60">Admin vérifié • {WHATSAPP_DISPLAY}</p>
           </div>
+          {onLogout && (
+            <button
+              onClick={onLogout}
+              className="p-1.5 text-white/60 hover:text-red-400 hover:bg-white/10 rounded-md transition-colors"
+              title="Verrouiller la session admin"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </aside>
 
@@ -376,6 +619,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             >
               Boutique
             </button>
+            {onLogout && (
+              <button
+                onClick={onLogout}
+                className="bg-red-500/20 hover:bg-red-500/30 text-red-300 p-1.5 rounded-full"
+                title="Verrouiller"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         </div>
 
@@ -404,6 +656,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             }`}
           >
             📁 Catégories ({categories.length})
+          </button>
+          <button
+            onClick={() => setActiveSection('medias')}
+            className={`px-3 py-1.5 rounded-full font-bold transition-colors ${
+              activeSection === 'medias' ? 'bg-[#D8F36A] text-[#123B2A]' : 'text-white/80'
+            }`}
+          >
+            🖼️ Accueil &amp; Bannières
           </button>
           <button
             onClick={() => setActiveSection('clients')}
@@ -868,6 +1128,368 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
             )}
+
+            {/* MEDIAS: GESTION DE LA PHOTO HERO ET DU CARROUSEL DES PRODUITS QUI FILENT */}
+            {activeSection === 'medias' && (
+              <div className="lg:col-span-12 flex flex-col gap-6">
+                {/* Header card with action */}
+                <div className="bg-white border border-[#E1E3DA] rounded-2xl p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div>
+                    <h2 className="text-lg font-bold font-title text-[#123B2A] flex items-center gap-2">
+                      <ImageIcon className="w-5 h-5 text-[#1F5A40]" />
+                      <span>Photos d'accueil &amp; Bannières Défilantes</span>
+                    </h2>
+                    <p className="text-xs text-[#6B726C] mt-0.5">
+                      Personnalisez la photo principale de l'Hero et les images des produits qui défilent dans le carrousel.
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={handleSaveMediaConfig}
+                    disabled={isSavingMedia}
+                    className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-[#123B2A] hover:bg-[#1F5A40] text-white text-xs sm:text-sm font-bold shadow-md transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+                  >
+                    <Save className="w-4 h-4 text-[#D8F36A]" />
+                    <span>{isSavingMedia ? 'Enregistrement en cours...' : '💾 Publier les modifications'}</span>
+                  </button>
+                </div>
+
+                {/* 1. HERO BANNER PHOTO */}
+                <div className="bg-white border border-[#E1E3DA] rounded-2xl p-6 shadow-xs">
+                  <div className="flex items-center justify-between border-b border-[#E1E3DA] pb-3 mb-5">
+                    <div>
+                      <h3 className="text-base font-bold font-title text-[#123B2A] flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-[#D8F36A]" />
+                        <span>1. Photo &amp; Textes de l'Hero (Grande bannière d'accueil)</span>
+                      </h3>
+                      <p className="text-xs text-[#6B726C]">
+                        L'image principale vue par les clients dès leur arrivée sur la boutique
+                      </p>
+                    </div>
+                    <span className="text-xs bg-[#FAF9F5] border border-[#E1E3DA] text-[#123B2A] font-semibold px-2.5 py-1 rounded-full">
+                      Format Portrait / Carré recommandé
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                    {/* Hero Preview & File Uploader */}
+                    <div className="lg:col-span-5 flex flex-col gap-3">
+                      <div className="relative rounded-xl overflow-hidden border border-[#E1E3DA] aspect-4/5 bg-[#123B2A] shadow-md group">
+                        <img
+                          src={heroImg}
+                          alt="Aperçu Hero"
+                          className="w-full h-full object-cover object-top"
+                        />
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center gap-2 transition-opacity p-4 text-center">
+                          <label className="px-4 py-2 rounded-full bg-white text-[#123B2A] text-xs font-bold shadow-lg hover:bg-[#D8F36A] cursor-pointer">
+                            <span>Changer la photo</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={(e) => handleHeroFileUpload(e.target.files)}
+                              className="hidden"
+                            />
+                          </label>
+                          <p className="text-[11px] text-white">Glisser ou cliquer pour importer</p>
+                        </div>
+                      </div>
+
+                      {/* File Uploader Bar */}
+                      <label className="w-full border-2 border-dashed border-[#1F5A40]/30 hover:border-[#1F5A40] rounded-xl p-3 bg-[#FAF9F5] text-center transition-colors cursor-pointer block">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => handleHeroFileUpload(e.target.files)}
+                          className="hidden"
+                        />
+                        <div className="flex items-center justify-center gap-2 text-xs font-bold text-[#123B2A]">
+                          <Upload className="w-4 h-4 text-[#1F5A40]" />
+                          <span>{isUploadingHero ? 'Compression de la photo...' : 'Importer une photo Hero (Téléphone / PC)'}</span>
+                        </div>
+                      </label>
+                    </div>
+
+                    {/* Hero Settings & Copy Fields */}
+                    <div className="lg:col-span-7 flex flex-col gap-4 text-xs">
+                      <div>
+                        <label className="block font-bold text-[#123B2A] mb-1">
+                          URL directe de la photo Hero
+                        </label>
+                        <input
+                          type="text"
+                          value={heroImg}
+                          onChange={(e) => setHeroImg(e.target.value)}
+                          placeholder="https://... ou chemin d'image"
+                          className="w-full p-2.5 rounded-lg border border-[#E1E3DA] text-xs focus:outline-[#1F5A40] bg-[#FAF9F5]"
+                        />
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          <span className="text-[11px] text-[#6B726C] self-center mr-1">Modèles :</span>
+                          <button
+                            type="button"
+                            onClick={() => setHeroImg('/src/assets/images/hero_fashion_burkina_1794167660891.jpg')}
+                            className="px-2 py-0.5 rounded border border-[#E1E3DA] bg-white text-[10px] font-semibold text-[#123B2A] hover:bg-[#FAF9F5] cursor-pointer"
+                          >
+                            Lookbook Burkina
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setHeroImg('/src/assets/images/product_velocity_sneakers_1794167661807.jpg')}
+                            className="px-2 py-0.5 rounded border border-[#E1E3DA] bg-white text-[10px] font-semibold text-[#123B2A] hover:bg-[#FAF9F5] cursor-pointer"
+                          >
+                            Sneakers
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setHeroImg('/src/assets/images/product_sahel_leather_sandals_1794167662030.jpg')}
+                            className="px-2 py-0.5 rounded border border-[#E1E3DA] bg-white text-[10px] font-semibold text-[#123B2A] hover:bg-[#FAF9F5] cursor-pointer"
+                          >
+                            Sandales Cuir
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setHeroImg('/src/assets/images/product_streetwear_tshirt_1794167662293.jpg')}
+                            className="px-2 py-0.5 rounded border border-[#E1E3DA] bg-white text-[10px] font-semibold text-[#123B2A] hover:bg-[#FAF9F5] cursor-pointer"
+                          >
+                            T-shirt
+                          </button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-[#123B2A] mb-1">
+                          Slogan / Badge Hero
+                        </label>
+                        <input
+                          type="text"
+                          value={heroTagline}
+                          onChange={(e) => setHeroTagline(e.target.value)}
+                          placeholder="Ton style, ta signature"
+                          className="w-full p-2.5 rounded-lg border border-[#E1E3DA] text-xs focus:outline-[#1F5A40]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-[#123B2A] mb-1">
+                          Titre d'accueil
+                        </label>
+                        <input
+                          type="text"
+                          value={heroTitle}
+                          onChange={(e) => setHeroTitle(e.target.value)}
+                          placeholder="Affirme ton style avec HUIZE SHOP"
+                          className="w-full p-2.5 rounded-lg border border-[#E1E3DA] text-xs focus:outline-[#1F5A40]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-[#123B2A] mb-1">
+                          Texte descriptif
+                        </label>
+                        <textarea
+                          rows={3}
+                          value={heroSubtitle}
+                          onChange={(e) => setHeroSubtitle(e.target.value)}
+                          className="w-full p-2.5 rounded-lg border border-[#E1E3DA] text-xs focus:outline-[#1F5A40]"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. CAROUSEL BANNERS (PRODUITS QUI FILENT) */}
+                <div className="bg-white border border-[#E1E3DA] rounded-2xl p-6 shadow-xs">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-[#E1E3DA] pb-3 mb-5 gap-2">
+                    <div>
+                      <h3 className="text-base font-bold font-title text-[#123B2A] flex items-center gap-2">
+                        <ImageIcon className="w-4 h-4 text-[#1F5A40]" />
+                        <span>2. Produits qui défilent (Bannières du Carrousel)</span>
+                      </h3>
+                      <p className="text-xs text-[#6B726C]">
+                        Ces bannières défilent automatiquement sur la page d'accueil avec vos photos et offres phares
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleAddCarouselSlide}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#FAF9F5] hover:bg-[#EFEFE6] border border-[#E1E3DA] text-[#123B2A] text-xs font-bold rounded-lg transition-colors cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Ajouter une diapositive</span>
+                    </button>
+                  </div>
+
+                  <div className="flex flex-col gap-6">
+                    {carouselSlides.map((slide, idx) => (
+                      <div
+                        key={slide.id || idx}
+                        className="p-5 rounded-2xl border border-[#E1E3DA] bg-[#FAF9F5] shadow-xs flex flex-col md:flex-row gap-5 items-start"
+                      >
+                        {/* Slide Image Preview & Upload */}
+                        <div className="w-full md:w-56 shrink-0 flex flex-col gap-2">
+                          <div className="relative rounded-xl overflow-hidden border border-[#E1E3DA] aspect-16/10 bg-[#17212E] group shadow-xs">
+                            <img
+                              src={slide.image}
+                              alt={slide.title}
+                              className="w-full h-full object-cover object-center brightness-90"
+                            />
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                              <label className="px-3 py-1.5 rounded-full bg-white text-[#123B2A] text-[11px] font-bold shadow-md cursor-pointer hover:bg-[#D8F36A]">
+                                <span>Changer photo</span>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  onChange={(e) => handleSlideFileUpload(idx, e.target.files)}
+                                  className="hidden"
+                                />
+                              </label>
+                            </div>
+                          </div>
+
+                          <label className="border border-dashed border-[#1F5A40]/40 rounded-lg p-2 text-center text-[11px] font-bold text-[#123B2A] hover:bg-white transition-colors cursor-pointer block">
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={(e) => handleSlideFileUpload(idx, e.target.files)}
+                              className="hidden"
+                            />
+                            <div className="flex items-center justify-center gap-1.5">
+                              <Upload className="w-3.5 h-3.5" />
+                              <span>{uploadingSlideIdx === idx ? 'Chargement...' : 'Importer photo'}</span>
+                            </div>
+                          </label>
+
+                          <input
+                            type="text"
+                            value={slide.image}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setCarouselSlides((prev) =>
+                                prev.map((s, i) => (i === idx ? { ...s, image: val } : s))
+                              );
+                            }}
+                            placeholder="URL d'image..."
+                            className="w-full p-2 bg-white rounded border border-[#E1E3DA] text-[11px]"
+                          />
+                        </div>
+
+                        {/* Slide Content Fields */}
+                        <div className="flex-1 w-full grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                          <div className="sm:col-span-2 flex items-center justify-between border-b border-[#E1E3DA] pb-2">
+                            <span className="font-bold text-[#123B2A] text-xs">
+                              Diapositive #{idx + 1}
+                            </span>
+                            {carouselSlides.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteCarouselSlide(idx)}
+                                className="text-red-600 hover:text-red-800 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>Supprimer cette bannière</span>
+                              </button>
+                            )}
+                          </div>
+
+                          <div>
+                            <label className="block font-bold text-[#123B2A] mb-1">En-tête / Kicker</label>
+                            <input
+                              type="text"
+                              value={slide.kicker}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setCarouselSlides((prev) =>
+                                  prev.map((s, i) => (i === idx ? { ...s, kicker: val } : s))
+                                );
+                              }}
+                              className="w-full p-2 bg-white rounded-lg border border-[#E1E3DA] text-xs"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block font-bold text-[#123B2A] mb-1">Titre de l'article / Offre</label>
+                            <input
+                              type="text"
+                              value={slide.title}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setCarouselSlides((prev) =>
+                                  prev.map((s, i) => (i === idx ? { ...s, title: val } : s))
+                                );
+                              }}
+                              className="w-full p-2 bg-white rounded-lg border border-[#E1E3DA] text-xs font-bold text-[#123B2A]"
+                            />
+                          </div>
+
+                          <div className="sm:col-span-2">
+                            <label className="block font-bold text-[#123B2A] mb-1">Description courte</label>
+                            <textarea
+                              rows={2}
+                              value={slide.desc}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setCarouselSlides((prev) =>
+                                  prev.map((s, i) => (i === idx ? { ...s, desc: val } : s))
+                                );
+                              }}
+                              className="w-full p-2 bg-white rounded-lg border border-[#E1E3DA] text-xs"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block font-bold text-[#123B2A] mb-1">Catégorie liée</label>
+                            <select
+                              value={slide.category}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setCarouselSlides((prev) =>
+                                  prev.map((s, i) => (i === idx ? { ...s, category: val } : s))
+                                );
+                              }}
+                              className="w-full p-2 bg-white rounded-lg border border-[#E1E3DA] text-xs"
+                            >
+                              <option value="all">Toute la boutique</option>
+                              {categories.map((c) => (
+                                <option key={c.id} value={c.slug}>
+                                  {c.icon} {c.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block font-bold text-[#123B2A] mb-1">Texte du bouton</label>
+                            <input
+                              type="text"
+                              value={slide.ctaText}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setCarouselSlides((prev) =>
+                                  prev.map((s, i) => (i === idx ? { ...s, ctaText: val } : s))
+                                );
+                              }}
+                              className="w-full p-2 bg-white rounded-lg border border-[#E1E3DA] text-xs"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Save button at bottom of carousel section */}
+                  <div className="mt-6 pt-4 border-t border-[#E1E3DA] flex items-center justify-end gap-3">
+                    <button
+                      onClick={handleSaveMediaConfig}
+                      disabled={isSavingMedia}
+                      className="inline-flex items-center gap-2 px-8 py-3 rounded-full bg-[#123B2A] hover:bg-[#1F5A40] text-white text-xs sm:text-sm font-bold shadow-md transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+                    >
+                      <Save className="w-4 h-4 text-[#D8F36A]" />
+                      <span>{isSavingMedia ? 'Enregistrement en cours...' : '💾 Publier les photos & bannières'}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </main>
@@ -1083,7 +1705,39 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 )}
 
-                {/* Quick Samples & Manual URL Add */}
+                {/* Add Photo by Web Link (URL) */}
+                <div className="bg-[#FAF9F5] p-3 rounded-xl border border-[#E1E3DA] mb-3">
+                  <label className="block font-bold text-[#123B2A] text-xs mb-1">
+                    🔗 Ajouter une photo par lien web (URL)
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="url"
+                      value={manualImageUrl}
+                      onChange={(e) => setManualImageUrl(e.target.value)}
+                      placeholder="https://... Coller l'adresse d'une image (ex: un lien direct jpg, png ou webp)"
+                      className="flex-1 p-2 bg-white rounded-lg border border-[#E1E3DA] text-xs focus:outline-[#1F5A40]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const trimmed = manualImageUrl.trim();
+                        if (trimmed) {
+                          setFormImages((prev) => [...prev, trimmed]);
+                          setManualImageUrl('');
+                        }
+                      }}
+                      className="px-3.5 py-2 bg-[#123B2A] hover:bg-[#1F5A40] text-[#D8F36A] font-bold rounded-lg text-xs transition-colors shrink-0 cursor-pointer"
+                    >
+                      + Ajouter le lien
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-[#6B726C] mt-1">
+                    Astuce : vous pouvez coller n'importe quel lien d'image web, ou utiliser le bouton d'importation au-dessus pour importer depuis votre téléphone ou PC.
+                  </p>
+                </div>
+
+                {/* Quick Samples */}
                 <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-[#E1E3DA]">
                   <span className="text-[11px] font-medium text-[#6B726C]">Modèles prédéfinis :</span>
                   <button
@@ -1108,6 +1762,65 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     + T-shirt
                   </button>
                 </div>
+              </div>
+
+              {/* AI Vision Autofill Banner & Trigger */}
+              <div className="bg-gradient-to-r from-[#123B2A] via-[#1A4D38] to-[#123B2A] text-white p-4 rounded-xl border border-[#D8F36A]/40 shadow-md">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-[#D8F36A] text-[#123B2A] flex items-center justify-center shrink-0 shadow-sm">
+                      <Sparkles className="w-5 h-5 fill-current text-[#123B2A]" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs sm:text-sm font-bold text-white">
+                          Remplissage automatique par IA
+                        </span>
+                        <span className="bg-[#D8F36A] text-[#123B2A] text-[9px] font-extrabold px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+                          Gemini Vision
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-white/80 mt-0.5">
+                        L'IA analyse votre photo, identifie le modèle et remplit le nom, la catégorie, le prix marché en F CFA et la description.
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleAnalyzeWithAi}
+                    disabled={isAnalyzingAi}
+                    className="w-full sm:w-auto px-5 py-2.5 rounded-lg bg-[#D8F36A] hover:bg-[#c6ea40] active:scale-95 text-[#123B2A] font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all shrink-0 cursor-pointer disabled:opacity-50"
+                  >
+                    {isAnalyzingAi ? (
+                      <>
+                        <span className="w-3.5 h-3.5 border-2 border-[#123B2A] border-t-transparent rounded-full animate-spin" />
+                        <span>Analyse de l'image en cours...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4 text-[#123B2A]" />
+                        <span>🪄 Remplir avec l'IA via la photo</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* AI Success Feedback */}
+                {aiSuccessMessage && (
+                  <div className="mt-3 p-2.5 bg-[#E8F7EE] border border-[#A2E2B8] text-[#123B2A] rounded-lg text-xs flex items-center gap-2 animate-fade-in font-medium">
+                    <Check className="w-4 h-4 text-[#1F5A40] shrink-0" />
+                    <span>{aiSuccessMessage}</span>
+                  </div>
+                )}
+
+                {/* AI Error Feedback */}
+                {aiAnalysisError && (
+                  <div className="mt-3 p-2.5 bg-red-50 border border-red-200 text-red-800 rounded-lg text-xs flex items-center gap-2 animate-fade-in">
+                    <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                    <span>{aiAnalysisError}</span>
+                  </div>
+                )}
               </div>
 
               <div>

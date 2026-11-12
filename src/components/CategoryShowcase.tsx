@@ -34,42 +34,47 @@ export const CategoryShowcase: React.FC<CategoryShowcaseProps> = ({ onSelectCate
   ];
 
   return (
-    <section className="py-12 bg-white">
+    <section className="py-8 sm:py-12 bg-white">
       <div className="max-w-6xl mx-auto px-4 sm:px-6">
-        <div className="text-center mb-10">
-          <h2 className="text-2xl sm:text-3xl font-bold font-title text-[#123B2A] relative inline-block">
+        <div className="text-center mb-6 sm:mb-10">
+          <h2 className="text-xl sm:text-2xl md:text-3xl font-bold font-title text-[#123B2A] relative inline-block">
             Explore nos catégories
-            <span className="block w-14 h-1 bg-[#D8F36A] rounded-full mx-auto mt-2" />
+            <span className="block w-12 sm:w-14 h-1 bg-[#D8F36A] rounded-full mx-auto mt-1.5 sm:mt-2" />
           </h2>
-          <p className="text-sm text-[#6B726C] mt-2 max-w-md mx-auto">
+          <p className="text-xs sm:text-sm text-[#6B726C] mt-1.5 sm:mt-2 max-w-md mx-auto">
             Trouve rapidement ce que tu cherches parmi nos collections phares adaptées à ton style.
           </p>
         </div>
 
-        <div className="flex flex-wrap justify-center items-center gap-8 sm:gap-12 max-w-4xl mx-auto">
+        {/* Categories container: 3 columns horizontally on Android/mobile, properly sized without vertical stacking */}
+        <div className="grid grid-cols-3 gap-2 sm:gap-6 md:gap-10 max-w-4xl mx-auto justify-items-center">
           {categories.map((cat) => (
             <button
               key={cat.id}
               onClick={() => onSelectCategory(cat.id)}
-              className="group flex flex-col items-center text-center cursor-pointer transition-transform hover:-translate-y-1.5 focus-visible:outline-none"
+              className="group flex flex-col items-center text-center cursor-pointer transition-transform hover:-translate-y-1 focus-visible:outline-none w-full max-w-[160px]"
             >
-              <div className="relative w-44 h-44 sm:w-48 sm:h-48 rounded-full overflow-hidden border-4 border-white shadow-xl bg-[#F8F7F2] flex items-center justify-center p-2 group-hover:shadow-2xl transition-shadow ring-1 ring-[#E1E3DA]">
+              {/* Responsive circular thumbnail: compact on Android, spacious on desktop */}
+              <div className="relative w-20 h-20 sm:w-32 sm:h-32 md:w-44 md:h-44 rounded-full overflow-hidden border-2 sm:border-4 border-white shadow-md sm:shadow-xl bg-[#F8F7F2] flex items-center justify-center p-1 sm:p-2 group-hover:shadow-2xl transition-shadow ring-1 ring-[#E1E3DA]">
                 <img
                   src={cat.image}
                   alt={cat.name}
                   className="w-full h-full object-cover rounded-full group-hover:scale-105 transition-transform duration-500"
                 />
                 <span
-                  className={`absolute top-3 right-3 text-[11px] font-extrabold px-2.5 py-0.5 rounded-full border-2 border-white shadow-md uppercase tracking-wider ${cat.badgeColor}`}
+                  className={`absolute top-1 right-1 sm:top-2.5 sm:right-2.5 text-[8px] sm:text-[10px] md:text-[11px] font-extrabold px-1.5 py-0.5 sm:px-2.5 sm:py-0.5 rounded-full border border-white sm:border-2 shadow-xs uppercase tracking-wider ${cat.badgeColor}`}
                 >
                   {cat.badge}
                 </span>
               </div>
 
-              <h3 className="text-lg sm:text-xl font-bold font-title text-[#123B2A] mt-4 mb-0.5 group-hover:text-[#1F5A40]">
+              <h3 className="text-xs sm:text-base md:text-xl font-bold font-title text-[#123B2A] mt-2 sm:mt-3 mb-0.5 group-hover:text-[#1F5A40] truncate max-w-full">
                 {cat.name}
               </h3>
-              <span className="text-xs font-bold text-[#1F5A40] tracking-wider uppercase group-hover:underline">
+              <p className="hidden sm:block text-[11px] text-[#6B726C] mb-1">
+                {cat.subtitle}
+              </p>
+              <span className="text-[10px] sm:text-xs font-bold text-[#1F5A40] tracking-wider uppercase group-hover:underline flex items-center gap-0.5">
                 Explorer →
               </span>
             </button>

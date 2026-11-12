@@ -65,6 +65,18 @@
         "avatar": { "type": "string", "description": "Initiales avatar" }
       },
       "required": ["id", "name", "phone"]
+    },
+    "SiteSettings": {
+      "title": "SiteSettings",
+      "description": "Paramètres visuels d'accueil, photo de l'Hero et bannières carrousel",
+      "type": "object",
+      "properties": {
+        "heroImage": { "type": "string", "description": "Photo principale de l'Hero" },
+        "heroTagline": { "type": "string", "description": "Slogan de l'Hero" },
+        "heroTitle": { "type": "string", "description": "Titre principal de l'Hero" },
+        "heroSubtitle": { "type": "string", "description": "Sous-titre descriptif de l'Hero" },
+        "carouselSlides": { "type": "array", "description": "Liste des bannières et photos du carrousel d'accueil" }
+      }
     }
   },
   "firestore": {
@@ -83,6 +95,10 @@
     "/leads/{leadId}": {
       "schema": { "$ref": "#/entities/ClientLead" },
       "description": "Annuaire des prospects et clients à relancer"
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/SiteSettings" },
+      "description": "Configuration multimédia de l'accueil, photo hero et diapositives du carrousel"
     }
   }
 }
