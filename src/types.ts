@@ -12,6 +12,7 @@ export interface Product {
   ref: string;
   description: string;
   featured?: boolean;
+  likes?: number;
 }
 
 export interface CartItem {
@@ -64,6 +65,7 @@ export interface CarouselSlide {
 }
 
 export interface SiteMediaConfig {
+  logoUrl?: string;
   heroImage: string;
   heroTagline?: string;
   heroTitle?: string;

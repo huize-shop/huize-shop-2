@@ -24,6 +24,7 @@ import {
   subscribeLeads,
   subscribeMediaConfig,
   saveMediaConfigToDb,
+  incrementProductLikesInDb,
   testConnection
 } from './firebase.ts';
 import { Navbar } from './components/Navbar.tsx';
@@ -32,14 +33,17 @@ import { AdCarousel } from './components/AdCarousel.tsx';
 import { CategoryShowcase } from './components/CategoryShowcase.tsx';
 import { ProductCard } from './components/ProductCard.tsx';
 import { ProductDetailModal } from './components/ProductDetailModal.tsx';
+import { ShareModal } from './components/ShareModal.tsx';
 import { CartView } from './components/CartView.tsx';
 import { ContactView } from './components/ContactView.tsx';
+import { AboutView } from './components/AboutView.tsx';
 import { AdminDashboard } from './components/AdminDashboard.tsx';
 import { AdminAuthModal } from './components/AdminAuthModal.tsx';
 import { Reassurance } from './components/Reassurance.tsx';
 import { PaymentDelivery } from './components/PaymentDelivery.tsx';
 import { Footer } from './components/Footer.tsx';
-import { Search, SlidersHorizontal, ArrowRight, Check } from 'lucide-react';
+import { OfflineIndicator } from './components/OfflineIndicator.tsx';
+import { Search, SlidersHorizontal, ArrowRight, Check, Heart } from 'lucide-react';
 import { WHATSAPP_DISPLAY } from './utils/whatsapp.ts';
 
 export default function App() {
@@ -72,8 +76,19 @@ export default function App() {
     }
   });
 
+  // Likes / Coups de cœur state (persisted locally)
+  const [likedProductIds, setLikedProductIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('huize_liked_products_v1');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
   // Modal State
   const [modalProduct, setModalProduct] = useState<Product | null>(null);
+  const [shareModalProduct, setShareModalProduct] = useState<Product | null>(null);
 
   // Shop Catalogue Filters
   const [shopCategoryFilter, setShopCategoryFilter] = useState<string>('all');
@@ -88,6 +103,42 @@ export default function App() {
     setTimeout(() => {
       setToastMessage(null);
     }, 3000);
+  };
+
+  // Toggle Like handler with optimistic UI and Firestore counter sync
+  const handleToggleLike = (productId: string) => {
+    const isAlreadyLiked = likedProductIds.includes(productId);
+    const updated = isAlreadyLiked
+      ? likedProductIds.filter((id) => id !== productId)
+      : [...likedProductIds, productId];
+
+    setLikedProductIds(updated);
+    try {
+      localStorage.setItem('huize_liked_products_v1', JSON.stringify(updated));
+    } catch (e) {
+      console.error(e);
+    }
+
+    setProducts((prev) =>
+      prev.map((p) => {
+        if (p.id === productId) {
+          const currentLikes = p.likes || 0;
+          return {
+            ...p,
+            likes: Math.max(0, currentLikes + (isAlreadyLiked ? -1 : 1))
+          };
+        }
+        return p;
+      })
+    );
+
+    incrementProductLikesInDb(productId, isAlreadyLiked ? -1 : 1);
+
+    showToast(
+      isAlreadyLiked
+        ? 'Article retiré de vos coups de cœur'
+        : 'Ajouté à vos coups de cœur ❤️'
+    );
   };
 
   // Connect and subscribe to Firebase Firestore in real-time
@@ -138,14 +189,41 @@ export default function App() {
     saveStoredProducts(products);
   }, [products]);
 
+  // Deep-linking: auto-open product modal when visiting via shared link (?produit=ID or ?product=ID)
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const targetId = params.get('produit') || params.get('product');
+      if (targetId && products.length > 0) {
+        const found = products.find(
+          (p) => p.id === targetId || p.ref.toLowerCase() === targetId.toLowerCase()
+        );
+        if (found) {
+          setModalProduct(found);
+        }
+      }
+    } catch (err) {
+      console.error('URL param parsing error:', err);
+    }
+  }, [products]);
+
   // Fallback cache categories to localStorage
   useEffect(() => {
     saveStoredCategories(categories);
   }, [categories]);
 
-  // Fallback cache mediaConfig to localStorage
+  // Fallback cache mediaConfig to localStorage & sync favicon if custom logoUrl is set
   useEffect(() => {
     saveStoredMediaConfig(mediaConfig);
+    if (mediaConfig.logoUrl) {
+      let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement | null;
+      if (!link) {
+        link = document.createElement('link');
+        link.rel = 'icon';
+        document.head.appendChild(link);
+      }
+      link.href = mediaConfig.logoUrl;
+    }
   }, [mediaConfig]);
 
   // Sync cart to localStorage
@@ -436,7 +514,11 @@ export default function App() {
   const catalogFilteredProducts = products
     .filter((p) => {
       const matchCategory =
-        currentCategorySlug === 'all' || p.category === currentCategorySlug;
+        currentCategorySlug === 'all'
+          ? true
+          : currentCategorySlug === 'favoris'
+          ? likedProductIds.includes(p.id)
+          : p.category === currentCategorySlug;
       const matchSearch =
         p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         p.ref.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -444,6 +526,7 @@ export default function App() {
       return matchCategory && matchSearch;
     })
     .sort((a, b) => {
+      if (sortOption === 'popular') return (b.likes || 0) - (a.likes || 0);
       if (sortOption === 'price-asc') return a.price - b.price;
       if (sortOption === 'price-desc') return b.price - a.price;
       if (sortOption === 'newest') return (b.badge === 'Nouveau' ? 1 : 0) - (a.badge === 'Nouveau' ? 1 : 0);
@@ -495,6 +578,9 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F8F7F2] text-[#202720]">
+      {/* Offline Connectivity Indicator */}
+      <OfflineIndicator />
+
       {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-5 right-5 z-50 bg-[#123B2A] text-white px-4 py-3 rounded-xl shadow-xl flex items-center gap-2 border border-[#D8F36A] animate-fade-in text-xs sm:text-sm font-semibold">
@@ -512,6 +598,13 @@ export default function App() {
           setActiveTab('panier');
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
+        likedCount={likedProductIds.length}
+        onOpenFavorites={() => {
+          setActiveTab('boutique');
+          setShopCategoryFilter('favoris');
+          window.scrollTo({ top: 380, behavior: 'smooth' });
+        }}
+        logoUrl={mediaConfig.logoUrl}
         isAdminMode={isAdminMode}
         setIsAdminMode={setIsAdminMode}
       />
@@ -576,6 +669,19 @@ export default function App() {
                     >
                       Tous ({products.length})
                     </button>
+                    {likedProductIds.length > 0 && (
+                      <button
+                        onClick={() => setShopCategoryFilter('favoris')}
+                        className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+                          shopCategoryFilter === 'favoris'
+                            ? 'bg-red-600 text-white shadow-xs'
+                            : 'bg-white border border-[#E1E3DA] text-red-600 hover:bg-red-50'
+                        }`}
+                      >
+                        <Heart className="w-3.5 h-3.5 fill-current" />
+                        <span>Coups de cœur ({likedProductIds.length})</span>
+                      </button>
+                    )}
                     {categories.map((c) => {
                       const count = products.filter((p) => p.category === c.slug).length;
                       return (
@@ -613,6 +719,7 @@ export default function App() {
                       className="w-full sm:w-auto p-2 bg-white border border-[#E1E3DA] rounded-lg text-xs text-[#123B2A] focus:outline-[#1F5A40]"
                     >
                       <option value="default">Sélection HUIZE</option>
+                      <option value="popular">❤️ Les plus aimés</option>
                       <option value="newest">Nouveautés d'abord</option>
                       <option value="price-asc">Prix croissant</option>
                       <option value="price-desc">Prix décroissant</option>
@@ -623,15 +730,19 @@ export default function App() {
                 {/* Grid */}
                 {catalogFilteredProducts.length === 0 ? (
                   <div className="text-center py-12 bg-[#FAF9F5] rounded-xl border border-[#E1E3DA]">
-                    <p className="text-sm font-semibold text-[#6B726C]">Aucun article ne correspond à votre recherche.</p>
+                    <p className="text-sm font-semibold text-[#6B726C]">
+                      {shopCategoryFilter === 'favoris'
+                        ? "Vous n'avez pas encore de coup de cœur enregistré. Cliquez sur le cœur ❤️ d'un article pour le retrouver ici !"
+                        : 'Aucun article ne correspond à votre recherche.'}
+                    </p>
                     <button
                       onClick={() => {
                         setSearchQuery('');
                         setShopCategoryFilter('all');
                       }}
-                      className="mt-3 text-xs text-[#1F5A40] underline font-bold"
+                      className="mt-3 text-xs text-[#1F5A40] underline font-bold cursor-pointer"
                     >
-                      Réinitialiser les filtres
+                      Afficher tous les articles
                     </button>
                   </div>
                 ) : (
@@ -642,6 +753,9 @@ export default function App() {
                         product={product}
                         onOpenDetails={(p) => setModalProduct(p)}
                         onQuickAdd={handleQuickAdd}
+                        isLiked={likedProductIds.includes(product.id)}
+                        onToggleLike={handleToggleLike}
+                        onOpenShare={(p) => setShareModalProduct(p)}
                       />
                     ))}
                   </div>
@@ -693,6 +807,19 @@ export default function App() {
                 >
                   Tous ({products.length})
                 </button>
+                {likedProductIds.length > 0 && (
+                  <button
+                    onClick={() => setShopCategoryFilter('favoris')}
+                    className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+                      shopCategoryFilter === 'favoris'
+                        ? 'bg-red-600 text-white shadow-xs'
+                        : 'bg-[#FAF9F5] border border-[#E1E3DA] text-red-600 hover:bg-red-50'
+                    }`}
+                  >
+                    <Heart className="w-3.5 h-3.5 fill-current" />
+                    <span>Coups de cœur ({likedProductIds.length})</span>
+                  </button>
+                )}
                 {categories.map((c) => {
                   const count = products.filter((p) => p.category === c.slug).length;
                   return (
@@ -729,6 +856,7 @@ export default function App() {
                   className="w-full sm:w-auto p-2 bg-[#FAF9F5] border border-[#E1E3DA] rounded-lg text-xs text-[#123B2A] focus:outline-[#1F5A40]"
                 >
                   <option value="default">Sélection HUIZE</option>
+                  <option value="popular">❤️ Les plus aimés</option>
                   <option value="newest">Nouveautés d'abord</option>
                   <option value="price-asc">Prix croissant</option>
                   <option value="price-desc">Prix décroissant</option>
@@ -739,13 +867,17 @@ export default function App() {
             {/* Product Grid */}
             {catalogFilteredProducts.length === 0 ? (
               <div className="text-center py-16 bg-white rounded-2xl border border-[#E1E3DA]">
-                <p className="text-sm font-semibold text-[#6B726C]">Aucun article disponible pour ce filtre.</p>
+                <p className="text-sm font-semibold text-[#6B726C]">
+                  {shopCategoryFilter === 'favoris'
+                    ? "Vous n'avez pas encore de coup de cœur enregistré. Cliquez sur le cœur ❤️ d'un produit pour le retrouver ici !"
+                    : 'Aucun article disponible pour ce filtre.'}
+                </p>
                 <button
                   onClick={() => {
                     setSearchQuery('');
                     setShopCategoryFilter('all');
                   }}
-                  className="mt-3 px-4 py-2 bg-[#123B2A] text-white rounded-full text-xs font-bold"
+                  className="mt-3 px-4 py-2 bg-[#123B2A] text-white rounded-full text-xs font-bold cursor-pointer"
                 >
                   Afficher tous les articles
                 </button>
@@ -758,6 +890,9 @@ export default function App() {
                     product={product}
                     onOpenDetails={(p) => setModalProduct(p)}
                     onQuickAdd={handleQuickAdd}
+                    isLiked={likedProductIds.includes(product.id)}
+                    onToggleLike={handleToggleLike}
+                    onOpenShare={(p) => setShareModalProduct(p)}
                   />
                 ))}
               </div>
@@ -780,7 +915,15 @@ export default function App() {
           />
         )}
 
-        {/* VIEW 4: CONTACT */}
+        {/* VIEW 4: A PROPOS */}
+        {activeTab === 'apropos' && (
+          <AboutView
+            onExploreShop={() => handleTabChange('boutique')}
+            onOpenContact={() => handleTabChange('contact')}
+          />
+        )}
+
+        {/* VIEW 5: CONTACT */}
         {activeTab === 'contact' && <ContactView />}
       </main>
 
@@ -789,11 +932,23 @@ export default function App() {
         product={modalProduct}
         onClose={() => setModalProduct(null)}
         onAddToCart={handleAddToCart}
+        isLiked={modalProduct ? likedProductIds.includes(modalProduct.id) : false}
+        onToggleLike={handleToggleLike}
+        onOpenShare={(p) => setShareModalProduct(p)}
+      />
+
+      {/* Product Share Modal */}
+      <ShareModal
+        product={shareModalProduct}
+        isOpen={Boolean(shareModalProduct)}
+        onClose={() => setShareModalProduct(null)}
+        onShowToast={showToast}
       />
 
       {/* Footer */}
       <Footer
         onNavigate={handleTabChange}
+        logoUrl={mediaConfig.logoUrl}
         onOpenAdminAuth={() => {
           if (isAdminAuthenticated) {
             setIsAdminMode(true);

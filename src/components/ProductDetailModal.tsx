@@ -1,18 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { Product } from '../types.ts';
 import { formatFCFA, getProductWhatsAppUrl } from '../utils/whatsapp.ts';
-import { X, MessageCircle, ShoppingBag, Check, ShieldCheck, MapPin } from 'lucide-react';
+import { X, MessageCircle, ShoppingBag, Check, ShieldCheck, MapPin, Heart, Share2 } from 'lucide-react';
 
 interface ProductDetailModalProps {
   product: Product | null;
   onClose: () => void;
   onAddToCart: (product: Product, size: string, quantity: number) => void;
+  isLiked?: boolean;
+  onToggleLike?: (productId: string) => void;
+  onOpenShare?: (product: Product) => void;
 }
 
 export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   product,
   onClose,
-  onAddToCart
+  onAddToCart,
+  isLiked = false,
+  onToggleLike,
+  onOpenShare
 }) => {
   const [selectedSize, setSelectedSize] = useState<string>('');
   const [quantity, setQuantity] = useState<number>(1);
@@ -59,14 +65,49 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
         onClick={(e) => e.stopPropagation()}
         className="relative w-full max-w-3xl bg-white rounded-2xl shadow-2xl border border-[#E1E3DA] overflow-hidden my-auto animate-fade-in"
       >
-        {/* Close Button */}
-        <button
-          onClick={onClose}
-          aria-label="Fermer"
-          className="absolute top-3.5 right-3.5 z-20 w-9 h-9 rounded-full bg-[#FAF9F5] hover:bg-[#EFEFE6] text-[#123B2A] flex items-center justify-center transition-colors cursor-pointer border border-[#E1E3DA]"
-        >
-          <X className="w-5 h-5" />
-        </button>
+        {/* Top Header Action Buttons (Share, Like, Close) */}
+        <div className="absolute top-3.5 right-3.5 z-20 flex items-center gap-1.5 sm:gap-2">
+          {onOpenShare && (
+            <button
+              type="button"
+              onClick={() => onOpenShare(product)}
+              title="Partager cet article"
+              className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-[#FAF9F5] hover:bg-[#EFEFE6] text-[#123B2A] flex items-center justify-center transition-all cursor-pointer border border-[#E1E3DA] shadow-xs active:scale-95"
+            >
+              <Share2 className="w-4 h-4" />
+            </button>
+          )}
+
+          {onToggleLike && (
+            <button
+              type="button"
+              onClick={() => onToggleLike(product.id)}
+              title={isLiked ? 'Retirer des coups de cœur' : 'Ajouter aux coups de cœur'}
+              className={`h-8 sm:h-9 px-2.5 sm:px-3 rounded-full flex items-center gap-1.5 transition-all cursor-pointer border shadow-xs active:scale-95 ${
+                isLiked
+                  ? 'bg-red-50 text-red-600 border-red-200'
+                  : 'bg-[#FAF9F5] hover:bg-[#EFEFE6] text-gray-700 border-[#E1E3DA]'
+              }`}
+            >
+              <Heart
+                className={`w-4 h-4 transition-transform ${
+                  isLiked ? 'fill-red-500 text-red-500 scale-110' : 'text-gray-700'
+                }`}
+              />
+              <span className="text-xs font-bold tabular-nums">
+                {(product.likes || 0)}
+              </span>
+            </button>
+          )}
+
+          <button
+            onClick={onClose}
+            aria-label="Fermer"
+            className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-[#FAF9F5] hover:bg-[#EFEFE6] text-[#123B2A] flex items-center justify-center transition-colors cursor-pointer border border-[#E1E3DA] shadow-xs"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-12 max-h-[85vh] overflow-y-auto md:max-h-none md:overflow-visible">
           {/* Left: Gallery Column */}
@@ -223,6 +264,17 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 <ShoppingBag className="w-4 h-4" />
                 <span>{isOutOfStock ? 'Rupture temporaire' : 'Ajouter au panier'}</span>
               </button>
+
+              {onOpenShare && (
+                <button
+                  type="button"
+                  onClick={() => onOpenShare(product)}
+                  className="w-full inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-[#FAF9F5] hover:bg-[#EFEFE6] text-[#123B2A] text-xs font-semibold border border-[#E1E3DA] transition-colors cursor-pointer"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>Partager ce produit (WhatsApp, Facebook, Lien)</span>
+                </button>
+              )}
 
               {addedToast && (
                 <div className="p-2 rounded-lg bg-[#E8F7EE] text-[#1F5A40] text-xs font-bold text-center flex items-center justify-center gap-1.5 animate-fade-in border border-[#A2E2B8]">

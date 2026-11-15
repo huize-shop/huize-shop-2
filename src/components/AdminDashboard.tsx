@@ -127,7 +127,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [newCatName, setNewCatName] = useState('');
   const [newCatIcon, setNewCatIcon] = useState('🎒');
 
-  // Media & Home Banner State (Hero photo and scrolling carousel products)
+  // Media & Home Banner State (Site Logo, Hero photo and scrolling carousel products)
+  const [logoUrl, setLogoUrl] = useState<string>(mediaConfig?.logoUrl || '');
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [heroImg, setHeroImg] = useState<string>(
     mediaConfig?.heroImage || '/src/assets/images/hero_fashion_burkina_1794167660891.jpg'
   );
@@ -152,6 +154,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   React.useEffect(() => {
     if (mediaConfig) {
+      setLogoUrl(mediaConfig.logoUrl || '');
       if (mediaConfig.heroImage) setHeroImg(mediaConfig.heroImage);
       if (mediaConfig.heroTagline) setHeroTagline(mediaConfig.heroTagline);
       if (mediaConfig.heroTitle) setHeroTitle(mediaConfig.heroTitle);
@@ -161,6 +164,48 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
     }
   }, [mediaConfig]);
+
+  const handleLogoFileUpload = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setIsUploadingLogo(true);
+    const file = files[0];
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const result = e.target?.result as string;
+      if (file.type === 'image/svg+xml') {
+        setLogoUrl(result);
+        setIsUploadingLogo(false);
+        return;
+      }
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        const maxDim = 480;
+        if (width > maxDim || height > maxDim) {
+          if (width >= height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressed = canvas.toDataURL('image/png');
+          setLogoUrl(compressed);
+        }
+        setIsUploadingLogo(false);
+      };
+      img.src = result;
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleHeroFileUpload = (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -235,6 +280,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleSaveMediaConfig = async () => {
     setIsSavingMedia(true);
     const newConfig: SiteMediaConfig = {
+      logoUrl: logoUrl.trim(),
       heroImage: heroImg,
       heroTagline,
       heroTitle,
@@ -1152,6 +1198,77 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <Save className="w-4 h-4 text-[#D8F36A]" />
                     <span>{isSavingMedia ? 'Enregistrement en cours...' : '💾 Publier les modifications'}</span>
                   </button>
+                </div>
+
+                {/* 0. LOGO DU SITE */}
+                <div className="bg-white border border-[#E1E3DA] rounded-2xl p-6 shadow-xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#E1E3DA] pb-3 mb-5 gap-2">
+                    <div>
+                      <h3 className="text-base font-bold font-title text-[#123B2A] flex items-center gap-2">
+                        <ImageIcon className="w-4 h-4 text-[#1F5A40]" />
+                        <span>0. Logo du site (En-tête, Pied de page &amp; Onglet navigateur)</span>
+                      </h3>
+                      <p className="text-xs text-[#6B726C]">
+                        Importez votre logo officiel (PNG transparent recommandé) ou collez son lien
+                      </p>
+                    </div>
+                    {logoUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setLogoUrl('')}
+                        className="text-xs text-red-600 hover:underline font-semibold self-start sm:self-center cursor-pointer"
+                      >
+                        Revenir au badge texte par défaut
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-center">
+                    <div className="md:col-span-4 flex flex-col items-center justify-center p-4 rounded-xl bg-[#FAF9F5] border border-[#E1E3DA] min-h-28">
+                      {logoUrl ? (
+                        <img
+                          src={logoUrl}
+                          alt="Aperçu du logo HUIZE SHOP"
+                          className="max-h-20 max-w-full object-contain"
+                        />
+                      ) : (
+                        <span className="bg-[#123B2A] text-[#D8F36A] px-3 py-1.5 rounded-md font-bold text-base tracking-wider font-title">
+                          HUIZE SHOP
+                        </span>
+                      )}
+                      <span className="text-[10px] text-[#6B726C] mt-2">
+                        {logoUrl ? 'Logo personnalisé actif' : 'Badge texte par défaut'}
+                      </span>
+                    </div>
+
+                    <div className="md:col-span-8 flex flex-col gap-3">
+                      <label className="w-full border-2 border-dashed border-[#1F5A40]/30 hover:border-[#1F5A40] rounded-xl p-3 bg-[#FAF9F5] text-center transition-colors cursor-pointer block">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => handleLogoFileUpload(e.target.files)}
+                          className="hidden"
+                        />
+                        <div className="flex items-center justify-center gap-2 text-xs font-bold text-[#123B2A]">
+                          <Upload className="w-4 h-4 text-[#1F5A40]" />
+                          <span>{isUploadingLogo ? 'Optimisation du logo...' : 'Importer le logo depuis votre appareil (Téléphone / PC)'}</span>
+                        </div>
+                      </label>
+
+                      <div>
+                        <label className="block font-bold text-[#123B2A] text-xs mb-1">
+                          Ou coller le lien URL du logo
+                        </label>
+                        <input
+                          type="text"
+                          value={logoUrl}
+                          onChange={(e) => setLogoUrl(e.target.value)}
+                          placeholder="https://... (laisser vide pour le badge texte HUIZE SHOP)"
+                          className="w-full p-2.5 rounded-lg border border-[#E1E3DA] text-xs focus:outline-[#1F5A40] bg-[#FAF9F5]"
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 {/* 1. HERO BANNER PHOTO */}

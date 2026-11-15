@@ -1,20 +1,144 @@
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
+import { initializeApp, getApps } from 'firebase/app';
+import {
+  getFirestore,
+  doc,
+  getDoc,
+  collection,
+  query,
+  where,
+  limit,
+  getDocs
+} from 'firebase/firestore';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import dotenv from 'dotenv';
+import { INITIAL_PRODUCTS } from './src/data/initialData.ts';
+import type { Product } from './src/types.ts';
 
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const isProd = process.env.NODE_ENV === 'production';
-const PORT = 3000;
+const PORT = isProd ? Number(process.env.PORT) || 3000 : 3000;
+
+function initServerFirestore() {
+  try {
+    const configPath = path.join(__dirname, 'firebase-applet-config.json');
+    if (!fs.existsSync(configPath)) return null;
+    const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    const app = getApps().length > 0 ? getApps()[0] : initializeApp(cfg);
+    return getFirestore(app, cfg.firestoreDatabaseId);
+  } catch (err) {
+    console.warn('[Server] Could not initialize Firestore lookup:', err);
+    return null;
+  }
+}
+
+const serverDb = initServerFirestore();
+
+async function findProductByIdOrRef(idOrRef: string): Promise<Product | null> {
+  if (!idOrRef) return null;
+
+  if (serverDb) {
+    try {
+      const snap = await getDoc(doc(serverDb, 'products', idOrRef));
+      if (snap.exists()) {
+        return snap.data() as Product;
+      }
+      const refSnap = await getDocs(
+        query(collection(serverDb, 'products'), where('ref', '==', idOrRef), limit(1))
+      );
+      if (!refSnap.empty) {
+        return refSnap.docs[0].data() as Product;
+      }
+    } catch (err) {
+      console.warn('[Server] Firestore product lookup fallback:', err);
+    }
+  }
+
+  return (
+    INITIAL_PRODUCTS.find(
+      (p) => p.id === idOrRef || p.ref.toLowerCase() === idOrRef.toLowerCase()
+    ) || null
+  );
+}
+
+function getRequestOrigin(req: express.Request): string {
+  const protoHeader = req.headers['x-forwarded-proto'];
+  const hostHeader = req.headers['x-forwarded-host'];
+  const proto =
+    (Array.isArray(protoHeader) ? protoHeader[0] : protoHeader)?.split(',')[0].trim() ||
+    req.protocol ||
+    'https';
+  const host =
+    (Array.isArray(hostHeader) ? hostHeader[0] : hostHeader)?.split(',')[0].trim() ||
+    req.get('host') ||
+    `localhost:${PORT}`;
+  return `${proto}://${host}`;
+}
+
+function escapeHtmlAttr(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function injectProductOgMeta(html: string, product: Product, origin: string): string {
+  const formattedPrice = `${Number(product.price || 0).toLocaleString('fr-FR')} F CFA`;
+  const title = `${product.name} — ${formattedPrice} | HUIZE SHOP`;
+  const description =
+    product.description ||
+    `Commandez ${product.name} (${formattedPrice}) sur HUIZE SHOP avec livraison rapide au Burkina Faso.`;
+  const productUrl = `${origin}/?produit=${encodeURIComponent(product.id)}`;
+  const imageUrl = `${origin}/api/products/${encodeURIComponent(product.id)}/image.jpg`;
+
+  const safeTitle = escapeHtmlAttr(title);
+  const safeDesc = escapeHtmlAttr(description);
+  const safeUrl = escapeHtmlAttr(productUrl);
+  const safeImg = escapeHtmlAttr(imageUrl);
+  const safeAlt = escapeHtmlAttr(product.name);
+
+  let updated = html
+    .replace(/<title>[\s\S]*?<\/title>/i, `<title>${safeTitle}</title>`)
+    .replace(
+      /<meta\s+name="description"\s+content="[^"]*"\s*\/?>/i,
+      `<meta name="description" content="${safeDesc}" />`
+    )
+    .replace(
+      /<meta\s+property="og:title"\s+content="[^"]*"\s*\/?>/i,
+      `<meta property="og:title" content="${safeTitle}" />`
+    )
+    .replace(
+      /<meta\s+property="og:description"\s+content="[^"]*"\s*\/?>/i,
+      `<meta property="og:description" content="${safeDesc}" />`
+    );
+
+  const extraTags = `
+    <meta property="og:url" content="${safeUrl}" />
+    <meta property="og:image" content="${safeImg}" />
+    <meta property="og:image:secure_url" content="${safeImg}" />
+    <meta property="og:image:alt" content="${safeAlt}" />
+    <meta property="og:image:width" content="750" />
+    <meta property="og:image:height" content="750" />
+    <meta name="twitter:title" content="${safeTitle}" />
+    <meta name="twitter:description" content="${safeDesc}" />
+    <meta name="twitter:image" content="${safeImg}" />
+  `;
+
+  return updated.replace('</head>', `${extraTags}\n  </head>`);
+}
 
 async function startServer() {
   const app = express();
+  app.set('trust proxy', true);
   app.use(express.json({ limit: '25mb' }));
 
   // Health check endpoint
@@ -247,18 +371,163 @@ ${hint ? `Indication spécifique : ${hint}` : ''}`;
     }
   });
 
-  // Mount Vite middleware in development or serve static in production
+  // Public Product Image Endpoint (serves base64 Firestore images, local assets, or remote URLs as real image bytes)
+  app.get(['/api/products/:id/image.jpg', '/api/products/:id/image'], async (req, res) => {
+    try {
+      const product = await findProductByIdOrRef(req.params.id);
+      const imageSrc = product?.images?.[0];
+
+      if (imageSrc) {
+        if (imageSrc.startsWith('data:')) {
+          const commaIdx = imageSrc.indexOf(',');
+          if (commaIdx !== -1) {
+            const meta = imageSrc.slice(0, commaIdx);
+            const rawBase64 = imageSrc.slice(commaIdx + 1);
+            const mimeMatch = meta.match(/data:([^;]+)/);
+            const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+            const buffer = Buffer.from(rawBase64, 'base64');
+            res.setHeader('Content-Type', mimeType);
+            res.setHeader('Cache-Control', 'public, max-age=3600');
+            return res.send(buffer);
+          }
+        } else if (imageSrc.startsWith('http://') || imageSrc.startsWith('https://')) {
+          try {
+            const remoteRes = await fetch(imageSrc);
+            if (remoteRes.ok) {
+              const contentType = remoteRes.headers.get('content-type') || 'image/jpeg';
+              const buf = Buffer.from(await remoteRes.arrayBuffer());
+              res.setHeader('Content-Type', contentType);
+              res.setHeader('Cache-Control', 'public, max-age=3600');
+              return res.send(buf);
+            }
+          } catch {
+            return res.redirect(imageSrc);
+          }
+        } else {
+          const cleanPath = imageSrc.startsWith('/') ? imageSrc.slice(1) : imageSrc;
+          const candidates = [
+            path.resolve(__dirname, 'public', cleanPath),
+            path.resolve(__dirname, cleanPath)
+          ];
+          for (const filePath of candidates) {
+            if (
+              (filePath.startsWith(path.resolve(__dirname, 'public')) ||
+                filePath.startsWith(path.resolve(__dirname, 'src'))) &&
+              fs.existsSync(filePath)
+            ) {
+              const ext = path.extname(filePath).toLowerCase();
+              const mimeType =
+                ext === '.png'
+                  ? 'image/png'
+                  : ext === '.webp'
+                  ? 'image/webp'
+                  : ext === '.svg'
+                  ? 'image/svg+xml'
+                  : 'image/jpeg';
+              res.setHeader('Content-Type', mimeType);
+              res.setHeader('Cache-Control', 'public, max-age=86400');
+              return res.sendFile(filePath);
+            }
+          }
+        }
+      }
+
+      const fallbackIcon = path.resolve(__dirname, 'public', 'pwa-512x512.png');
+      if (fs.existsSync(fallbackIcon)) {
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        return res.sendFile(fallbackIcon);
+      }
+
+      return res.status(404).send('Image not found');
+    } catch (err) {
+      console.error('Error serving product image:', err);
+      return res.status(500).send('Image server error');
+    }
+  });
+
+  // Mount Vite middleware in development (initialized asynchronously so port binds immediately) or serve static in production
   if (!isProd) {
-    const vite = await createViteServer({
+    const vitePromise = createViteServer({
       server: { middlewareMode: true, hmr: false },
       appType: 'spa'
     });
-    app.use(vite.middlewares);
+    vitePromise.catch((err) => {
+      console.error('Failed to initialize Vite dev server:', err);
+    });
+
+    app.use(async (req, res, next) => {
+      try {
+        const vite = await vitePromise;
+        const targetProductId =
+          typeof req.query.produit === 'string'
+            ? req.query.produit
+            : typeof req.query.product === 'string'
+            ? req.query.product
+            : null;
+
+        if (req.method === 'GET' && (req.path === '/' || req.path === '/index.html') && targetProductId) {
+          const product = await findProductByIdOrRef(targetProductId);
+          if (product) {
+            const template = fs.readFileSync(path.resolve(__dirname, 'index.html'), 'utf-8');
+            const withOg = injectProductOgMeta(template, product, getRequestOrigin(req));
+            const transformed = await vite.transformIndexHtml(req.originalUrl, withOg);
+            res.status(200).set({ 'Content-Type': 'text/html' }).end(transformed);
+            return;
+          }
+        }
+
+        return vite.middlewares(req, res, next);
+      } catch (err) {
+        return next(err);
+      }
+    });
   } else {
     const distPath = path.resolve(__dirname, 'dist');
+
+    app.get('/', async (req, res, next) => {
+      try {
+        const targetProductId =
+          typeof req.query.produit === 'string'
+            ? req.query.produit
+            : typeof req.query.product === 'string'
+            ? req.query.product
+            : null;
+        if (!targetProductId) return next();
+
+        const product = await findProductByIdOrRef(targetProductId);
+        if (!product) return next();
+
+        const html = fs.readFileSync(path.resolve(distPath, 'index.html'), 'utf-8');
+        const withOg = injectProductOgMeta(html, product, getRequestOrigin(req));
+        return res.status(200).set({ 'Content-Type': 'text/html' }).send(withOg);
+      } catch (err) {
+        return next(err);
+      }
+    });
+
     app.use(express.static(distPath));
-    app.get('*', (_req, res) => {
-      res.sendFile(path.resolve(distPath, 'index.html'));
+    app.get('*', async (req, res) => {
+      const indexHtmlPath = path.resolve(distPath, 'index.html');
+      const targetProductId =
+        typeof req.query.produit === 'string'
+          ? req.query.produit
+          : typeof req.query.product === 'string'
+          ? req.query.product
+          : null;
+
+      if (targetProductId) {
+        const product = await findProductByIdOrRef(targetProductId);
+        if (product) {
+          const html = fs.readFileSync(indexHtmlPath, 'utf-8');
+          return res
+            .status(200)
+            .set({ 'Content-Type': 'text/html' })
+            .send(injectProductOgMeta(html, product, getRequestOrigin(req)));
+        }
+      }
+
+      res.sendFile(indexHtmlPath);
     });
   }
 

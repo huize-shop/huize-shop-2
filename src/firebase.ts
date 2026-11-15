@@ -8,7 +8,8 @@ import {
   onSnapshot,
   setDoc,
   deleteDoc,
-  updateDoc
+  updateDoc,
+  increment
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 import { Product, Category, WhatsAppOrder, ClientLead, SiteMediaConfig } from './types.ts';
@@ -154,6 +155,18 @@ export async function deleteProductFromDb(productId: string): Promise<void> {
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
     throw error;
+  }
+}
+
+export async function incrementProductLikesInDb(productId: string, amount: number = 1): Promise<void> {
+  const path = `products/${productId}`;
+  try {
+    const docRef = doc(db, 'products', productId);
+    await updateDoc(docRef, {
+      likes: increment(amount)
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
   }
 }
 

@@ -1,24 +1,39 @@
 import React from 'react';
 import { MessageCircle } from 'lucide-react';
 import { WHATSAPP_DISPLAY, getDirectWhatsAppUrl } from '../utils/whatsapp.ts';
+import { PWAInstallButton } from './PWAInstallButton.tsx';
 
 interface FooterProps {
   onNavigate: (tab: string) => void;
+  logoUrl?: string;
   onOpenAdminAuth?: () => void;
   isAdminMode?: boolean;
   setIsAdminMode?: (admin: boolean) => void;
 }
 
-export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenAdminAuth }) => {
+export const Footer: React.FC<FooterProps> = ({ onNavigate, logoUrl, onOpenAdminAuth }) => {
   return (
     <footer className="bg-[#123B2A] text-white/90 border-t border-[#1F5A40]">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-12 lg:py-16">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-8 lg:gap-12">
           {/* Brand Info */}
           <div className="md:col-span-5 flex flex-col items-start gap-3">
-            <span className="font-title text-2xl font-bold tracking-wider text-[#D8F36A]">
-              HUIZE SHOP
-            </span>
+            {logoUrl ? (
+              <div className="flex items-center gap-3">
+                <img
+                  src={logoUrl}
+                  alt="HUIZE SHOP"
+                  className="h-12 max-w-[160px] object-contain bg-white/95 rounded-lg p-1.5 shadow-xs"
+                />
+                <span className="font-title text-xl font-bold tracking-wider text-[#D8F36A]">
+                  HUIZE SHOP
+                </span>
+              </div>
+            ) : (
+              <span className="font-title text-2xl font-bold tracking-wider text-[#D8F36A]">
+                HUIZE SHOP
+              </span>
+            )}
             <p className="font-title italic text-[#D8F36A]/90 text-sm">
               Ton style, ta signature.
             </p>
@@ -26,7 +41,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenAdminAuth }) =
               Boutique en ligne de baskets, sandales et vêtements de qualité au Burkina Faso.
               Articles vérifiés, essayage possible et finalisation personnalisée sur WhatsApp.
             </p>
-            <div className="mt-2">
+            <div className="mt-2 flex flex-wrap items-center gap-2.5">
               <a
                 href={getDirectWhatsAppUrl()}
                 target="_blank"
@@ -36,6 +51,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenAdminAuth }) =
                 <MessageCircle className="w-4 h-4 fill-current text-[#123B2A]" />
                 <span>WhatsApp : {WHATSAPP_DISPLAY}</span>
               </a>
+              <PWAInstallButton variant="footer" />
             </div>
           </div>
 
@@ -97,6 +113,22 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenAdminAuth }) =
                   className="hover:text-[#D8F36A] transition-colors cursor-pointer"
                 >
                   Tous les articles
+                </button>
+              </li>
+              <li>
+                <button
+                  onClick={() => onNavigate('apropos')}
+                  className="hover:text-[#D8F36A] transition-colors cursor-pointer"
+                >
+                  À propos de HUIZE
+                </button>
+              </li>
+              <li>
+                <button
+                  onClick={() => onNavigate('apropos')}
+                  className="hover:text-[#D8F36A] transition-colors cursor-pointer"
+                >
+                  Devenir fournisseur
                 </button>
               </li>
               <li>

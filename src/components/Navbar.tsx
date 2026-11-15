@@ -1,12 +1,16 @@
 import React, { useState } from 'react';
-import { ShoppingBag, MessageCircle, Menu, X } from 'lucide-react';
+import { ShoppingBag, MessageCircle, Menu, X, Heart } from 'lucide-react';
 import { WHATSAPP_DISPLAY, getDirectWhatsAppUrl } from '../utils/whatsapp.ts';
+import { PWAInstallButton } from './PWAInstallButton.tsx';
 
 interface NavbarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
   cartCount: number;
   onOpenCart: () => void;
+  likedCount?: number;
+  onOpenFavorites?: () => void;
+  logoUrl?: string;
   isAdminMode?: boolean;
   setIsAdminMode?: (admin: boolean) => void;
 }
@@ -16,6 +20,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   setActiveTab,
   cartCount,
   onOpenCart,
+  likedCount = 0,
+  onOpenFavorites,
+  logoUrl,
   isAdminMode,
   setIsAdminMode
 }) => {
@@ -39,14 +46,22 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {/* Main Header 3-Zone Contract */}
       <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-6">
-        {/* Zone 1: Brand Wordmark */}
+        {/* Zone 1: Brand Wordmark / Logo */}
         <button
           onClick={() => handleNavClick('accueil')}
-          className="flex items-center gap-2 group text-left shrink-0 cursor-pointer"
+          className="flex items-center gap-2.5 group text-left shrink-0 cursor-pointer"
         >
-          <span className="bg-[#123B2A] text-[#D8F36A] px-3 py-1 rounded-md font-bold text-lg sm:text-xl tracking-wider font-title group-hover:bg-[#1F5A40] transition-colors shadow-xs">
-            HUIZE SHOP
-          </span>
+          {logoUrl ? (
+            <img
+              src={logoUrl}
+              alt="HUIZE SHOP"
+              className="h-10 sm:h-11 max-w-[160px] object-contain rounded-md transition-transform group-hover:scale-105"
+            />
+          ) : (
+            <span className="bg-[#123B2A] text-[#D8F36A] px-3 py-1 rounded-md font-bold text-lg sm:text-xl tracking-wider font-title group-hover:bg-[#1F5A40] transition-colors shadow-xs">
+              HUIZE SHOP
+            </span>
+          )}
         </button>
 
         {/* Zone 2: Navigation Links (single line, clean unboxed) */}
@@ -102,6 +117,16 @@ export const Navbar: React.FC<NavbarProps> = ({
             Vêtements
           </button>
           <button
+            onClick={() => handleNavClick('apropos')}
+            className={`px-3 py-1.5 text-sm font-medium transition-colors whitespace-nowrap shrink-0 cursor-pointer rounded-md ${
+              activeTab === 'apropos'
+                ? 'text-[#123B2A] font-bold border-b-2 border-[#123B2A]'
+                : 'text-[#202720] hover:text-[#1F5A40] hover:bg-[#EFEFE6]'
+            }`}
+          >
+            À propos
+          </button>
+          <button
             onClick={() => handleNavClick('contact')}
             className={`px-3 py-1.5 text-sm font-medium transition-colors whitespace-nowrap cursor-pointer rounded-md ${
               activeTab === 'contact'
@@ -113,8 +138,30 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
         </nav>
 
-        {/* Zone 3: Primary Action & Cart */}
-        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+        {/* Zone 3: Primary Action, Favorites & Cart */}
+        <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+          <PWAInstallButton variant="navbar" />
+
+          {onOpenFavorites && (
+            <button
+              onClick={onOpenFavorites}
+              aria-label="Voir mes coups de cœur"
+              title="Mes coups de cœur"
+              className="relative p-2 rounded-full hover:bg-[#EFEFE6] text-[#123B2A] transition-colors cursor-pointer"
+            >
+              <Heart
+                className={`w-5 h-5 transition-transform active:scale-125 ${
+                  likedCount > 0 ? 'text-red-500 fill-red-500' : 'text-[#123B2A]'
+                }`}
+              />
+              {likedCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 text-[10px] font-bold rounded-full bg-red-500 text-white flex items-center justify-center shadow-xs">
+                  {likedCount}
+                </span>
+              )}
+            </button>
+          )}
+
           <a
             href={getDirectWhatsAppUrl()}
             target="_blank"
@@ -155,6 +202,25 @@ export const Navbar: React.FC<NavbarProps> = ({
       {mobileMenuOpen && (
         <div className="lg:hidden bg-white border-b border-[#E1E3DA] px-4 py-4 animate-fade-in shadow-md">
           <div className="flex flex-col gap-2">
+            {onOpenFavorites && (
+              <button
+                onClick={() => {
+                  onOpenFavorites();
+                  setMobileMenuOpen(false);
+                }}
+                className="text-left px-3 py-2 rounded-md font-medium text-sm text-[#202720] hover:bg-[#F8F7F2] flex items-center justify-between"
+              >
+                <span className="flex items-center gap-2">
+                  <Heart className="w-4 h-4 text-red-500 fill-red-500" />
+                  <span>Mes Coups de cœur</span>
+                </span>
+                {likedCount > 0 && (
+                  <span className="text-xs font-bold px-2 py-0.5 bg-red-100 text-red-600 rounded-full">
+                    {likedCount}
+                  </span>
+                )}
+              </button>
+            )}
             <button
               onClick={() => handleNavClick('accueil')}
               className="text-left px-3 py-2 rounded-md font-medium text-sm text-[#202720] hover:bg-[#F8F7F2]"
@@ -186,11 +252,18 @@ export const Navbar: React.FC<NavbarProps> = ({
               👕 Vêtements &amp; T-shirts
             </button>
             <button
+              onClick={() => handleNavClick('apropos')}
+              className="text-left px-3 py-2 rounded-md font-medium text-sm text-[#202720] hover:bg-[#F8F7F2]"
+            >
+              🤝 À propos &amp; Fournisseurs
+            </button>
+            <button
               onClick={() => handleNavClick('contact')}
               className="text-left px-3 py-2 rounded-md font-medium text-sm text-[#202720] hover:bg-[#F8F7F2]"
             >
               📍 Contact &amp; Localisation Ouaga
             </button>
+            <PWAInstallButton variant="drawer" onActionDone={() => setMobileMenuOpen(false)} />
           </div>
         </div>
       )}

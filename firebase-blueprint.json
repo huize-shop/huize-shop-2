@@ -17,7 +17,8 @@
         "sizes": { "type": "array", "description": "Pointures ou tailles disponibles" },
         "stock": { "type": "number", "description": "Quantité en stock" },
         "description": { "type": "string", "description": "Description détaillée" },
-        "featured": { "type": "boolean", "description": "Mise en avant sur l'accueil" }
+        "featured": { "type": "boolean", "description": "Mise en avant sur l'accueil" },
+        "likes": { "type": "number", "description": "Nombre de coups de cœur / likes" }
       },
       "required": ["id", "ref", "name", "category", "price", "stock"]
     },
@@ -71,6 +72,7 @@
       "description": "Paramètres visuels d'accueil, photo de l'Hero et bannières carrousel",
       "type": "object",
       "properties": {
+        "logoUrl": { "type": "string", "description": "Logo personnalisé de la boutique" },
         "heroImage": { "type": "string", "description": "Photo principale de l'Hero" },
         "heroTagline": { "type": "string", "description": "Slogan de l'Hero" },
         "heroTitle": { "type": "string", "description": "Titre principal de l'Hero" },
