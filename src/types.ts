@@ -62,11 +62,13 @@ export interface CarouselSlide {
   category: string;
   image: string;
   ctaText: string;
+  whatsappMessage?: string;
 }
 
 export interface SiteMediaConfig {
   logoUrl?: string;
   heroImage: string;
+  heroImages?: string[];
   heroTagline?: string;
   heroTitle?: string;
   heroSubtitle?: string;

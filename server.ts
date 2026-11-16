@@ -7,17 +7,18 @@ import {
   doc,
   getDoc,
   collection,
-  query,
-  where,
-  limit,
   getDocs
 } from 'firebase/firestore';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import dotenv from 'dotenv';
-import { INITIAL_PRODUCTS } from './src/data/initialData.ts';
-import type { Product } from './src/types.ts';
+import {
+  INITIAL_PRODUCTS,
+  INITIAL_CATEGORIES,
+  INITIAL_MEDIA_CONFIG
+} from './src/data/initialData.ts';
+import type { Product, Category, SiteMediaConfig } from './src/types.ts';
 
 dotenv.config();
 
@@ -41,25 +42,145 @@ function initServerFirestore() {
 
 const serverDb = initServerFirestore();
 
+interface CatalogSnapshot {
+  products: Product[];
+  categories: Category[];
+  mediaConfig: SiteMediaConfig;
+  updatedAt: number;
+  source: 'firestore' | 'seed' | 'memory-update';
+}
+
+const CATALOG_CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes shared across all visitors
+const CATALOG_ERROR_BACKOFF_MS = 5 * 60 * 1000; // 5 minutes backoff if Firestore quota/network fails
+const DISK_CACHE_PATH = '/tmp/huize-catalog-cache.json';
+
+function sortProductsList(list: Product[]): Product[] {
+  return [...list].sort((a, b) => {
+    const aIsNew = a.id.startsWith('prod-1');
+    const bIsNew = b.id.startsWith('prod-1');
+    if (aIsNew && !bIsNew) return -1;
+    if (!aIsNew && bIsNew) return 1;
+    if (aIsNew && bIsNew) return b.id.localeCompare(a.id);
+    return 0;
+  });
+}
+
+function loadDiskCache(): CatalogSnapshot | null {
+  try {
+    if (!fs.existsSync(DISK_CACHE_PATH)) return null;
+    const raw = JSON.parse(fs.readFileSync(DISK_CACHE_PATH, 'utf8'));
+    if (raw && Array.isArray(raw.products) && Array.isArray(raw.categories) && raw.mediaConfig) {
+      return raw as CatalogSnapshot;
+    }
+  } catch {
+    // Ignore disk cache read errors
+  }
+  return null;
+}
+
+function saveDiskCache(snapshot: CatalogSnapshot): void {
+  try {
+    fs.writeFileSync(DISK_CACHE_PATH, JSON.stringify(snapshot), 'utf8');
+  } catch {
+    // Ignore disk cache write errors
+  }
+}
+
+let catalogCache: CatalogSnapshot =
+  loadDiskCache() || {
+    products: INITIAL_PRODUCTS,
+    categories: INITIAL_CATEGORIES,
+    mediaConfig: INITIAL_MEDIA_CONFIG,
+    updatedAt: 0,
+    source: 'seed'
+  };
+
+let nextFirestoreRetryAt = 0;
+let refreshInFlight: Promise<CatalogSnapshot> | null = null;
+
+async function refreshCatalogFromFirestore(): Promise<CatalogSnapshot> {
+  if (!serverDb) {
+    return catalogCache;
+  }
+
+  try {
+    const [prodSnap, catSnap, mediaSnap] = await Promise.all([
+      getDocs(collection(serverDb, 'products')),
+      getDocs(collection(serverDb, 'categories')),
+      getDoc(doc(serverDb, 'settings', 'media'))
+    ]);
+
+    const products = prodSnap.empty
+      ? catalogCache.products.length > 0
+        ? catalogCache.products
+        : INITIAL_PRODUCTS
+      : sortProductsList(prodSnap.docs.map((d) => d.data() as Product));
+
+    const categories = catSnap.empty
+      ? catalogCache.categories.length > 0
+        ? catalogCache.categories
+        : INITIAL_CATEGORIES
+      : catSnap.docs.map((d) => d.data() as Category);
+
+    const mediaConfig = mediaSnap.exists()
+      ? (mediaSnap.data() as SiteMediaConfig)
+      : catalogCache.mediaConfig || INITIAL_MEDIA_CONFIG;
+
+    catalogCache = {
+      products,
+      categories,
+      mediaConfig,
+      updatedAt: Date.now(),
+      source: 'firestore'
+    };
+    nextFirestoreRetryAt = 0;
+    saveDiskCache(catalogCache);
+    return catalogCache;
+  } catch (err) {
+    console.warn('[Server Cache] Firestore refresh skipped/failed, serving cached catalog:', err);
+    nextFirestoreRetryAt = Date.now() + CATALOG_ERROR_BACKOFF_MS;
+    if (catalogCache.updatedAt === 0) {
+      catalogCache = {
+        ...catalogCache,
+        updatedAt: Date.now()
+      };
+    }
+    return catalogCache;
+  }
+}
+
+async function getCachedCatalog(forceRefresh = false): Promise<CatalogSnapshot> {
+  const now = Date.now();
+  const isFresh =
+    !forceRefresh &&
+    catalogCache.source !== 'seed' &&
+    catalogCache.updatedAt > 0 &&
+    now - catalogCache.updatedAt < CATALOG_CACHE_TTL_MS;
+
+  if (isFresh) {
+    return catalogCache;
+  }
+
+  if (!forceRefresh && now < nextFirestoreRetryAt) {
+    return catalogCache;
+  }
+
+  if (!refreshInFlight) {
+    refreshInFlight = refreshCatalogFromFirestore().finally(() => {
+      refreshInFlight = null;
+    });
+  }
+
+  return refreshInFlight;
+}
+
 async function findProductByIdOrRef(idOrRef: string): Promise<Product | null> {
   if (!idOrRef) return null;
-
-  if (serverDb) {
-    try {
-      const snap = await getDoc(doc(serverDb, 'products', idOrRef));
-      if (snap.exists()) {
-        return snap.data() as Product;
-      }
-      const refSnap = await getDocs(
-        query(collection(serverDb, 'products'), where('ref', '==', idOrRef), limit(1))
-      );
-      if (!refSnap.empty) {
-        return refSnap.docs[0].data() as Product;
-      }
-    } catch (err) {
-      console.warn('[Server] Firestore product lookup fallback:', err);
-    }
-  }
+  const catalog = await getCachedCatalog();
+  const found = catalog.products.find(
+    (p) => p.id === idOrRef || p.ref.toLowerCase() === idOrRef.toLowerCase()
+  );
+  if (found) return found;
 
   return (
     INITIAL_PRODUCTS.find(
@@ -148,8 +269,107 @@ async function startServer() {
       port: PORT,
       hasGeminiKey: Boolean(process.env.GEMINI_API_KEY),
       keyPrefix: process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.slice(0, 7) + '...' : 'none',
-      app: 'HUIZE SHOP Burkina Faso'
+      app: 'HUIZE SHOP Burkina Faso',
+      catalogCacheAgeSeconds: catalogCache.updatedAt
+        ? Math.round((Date.now() - catalogCache.updatedAt) / 1000)
+        : null,
+      catalogSource: catalogCache.source
     });
+  });
+
+  // Shared public catalog endpoint (eliminates per-visitor Firestore reads)
+  app.get('/api/catalog', async (_req, res) => {
+    const snapshot = await getCachedCatalog();
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+    res.json(snapshot);
+  });
+
+  // Immediate cache sync endpoint called after admin edits or product likes
+  app.post('/api/catalog/sync', async (req, res) => {
+    try {
+      const {
+        product,
+        deletedProductId,
+        category,
+        deletedCategoryId,
+        mediaConfig,
+        likedProductId,
+        likeDelta,
+        forceRefresh
+      } = req.body || {};
+
+      let changed = false;
+      let nextProducts = [...catalogCache.products];
+      let nextCategories = [...catalogCache.categories];
+      let nextMedia = catalogCache.mediaConfig;
+
+      if (product && typeof product === 'object' && typeof product.id === 'string') {
+        const idx = nextProducts.findIndex((p) => p.id === product.id);
+        if (idx >= 0) {
+          nextProducts[idx] = product as Product;
+        } else {
+          nextProducts = [product as Product, ...nextProducts];
+        }
+        nextProducts = sortProductsList(nextProducts).slice(0, 500);
+        changed = true;
+      }
+
+      if (typeof deletedProductId === 'string' && deletedProductId) {
+        nextProducts = nextProducts.filter((p) => p.id !== deletedProductId);
+        changed = true;
+      }
+
+      if (category && typeof category === 'object' && typeof category.id === 'string') {
+        const idx = nextCategories.findIndex((c) => c.id === category.id);
+        if (idx >= 0) {
+          nextCategories[idx] = category as Category;
+        } else {
+          nextCategories = [...nextCategories, category as Category];
+        }
+        changed = true;
+      }
+
+      if (typeof deletedCategoryId === 'string' && deletedCategoryId) {
+        nextCategories = nextCategories.filter((c) => c.id !== deletedCategoryId);
+        changed = true;
+      }
+
+      if (mediaConfig && typeof mediaConfig === 'object') {
+        nextMedia = mediaConfig as SiteMediaConfig;
+        changed = true;
+      }
+
+      if (typeof likedProductId === 'string' && typeof likeDelta === 'number') {
+        nextProducts = nextProducts.map((p) =>
+          p.id === likedProductId
+            ? { ...p, likes: Math.max(0, (p.likes || 0) + likeDelta) }
+            : p
+        );
+        changed = true;
+      }
+
+      if (changed) {
+        catalogCache = {
+          products: nextProducts,
+          categories: nextCategories,
+          mediaConfig: nextMedia,
+          updatedAt: Date.now(),
+          source: 'memory-update'
+        };
+        saveDiskCache(catalogCache);
+      }
+
+      if (forceRefresh === true) {
+        nextFirestoreRetryAt = 0;
+        const refreshed = await getCachedCatalog(true);
+        return res.json({ ok: true, catalog: refreshed });
+      }
+
+      return res.json({ ok: true, updatedAt: catalogCache.updatedAt });
+    } catch (err) {
+      console.error('[Server Cache] Sync error:', err);
+      return res.status(400).json({ ok: false });
+    }
   });
 
   // AI Product Vision Analysis Endpoint
@@ -449,8 +669,25 @@ ${hint ? `Indication spécifique : ${hint}` : ''}`;
   // Mount Vite middleware in development (initialized asynchronously so port binds immediately) or serve static in production
   if (!isProd) {
     const vitePromise = createViteServer({
-      server: { middlewareMode: true, hmr: false },
-      appType: 'spa'
+      server: { middlewareMode: true, hmr: false, ws: false },
+      appType: 'spa',
+      plugins: [
+        {
+          name: 'disable-vite-hmr-websocket',
+          enforce: 'post',
+          transform(code, id) {
+            if (
+              id.endsWith('/vite/dist/client/client.mjs') ||
+              id.endsWith('\\vite\\dist\\client\\client.mjs')
+            ) {
+              return code.replace(
+                /const transport = normalizeModuleRunnerTransport\(\(\(\) => \{[\s\S]*?\}\)\(\)\);/,
+                'const transport = normalizeModuleRunnerTransport({ async connect() {}, async disconnect() {}, send() {} });'
+              );
+            }
+          }
+        }
+      ]
     });
     vitePromise.catch((err) => {
       console.error('Failed to initialize Vite dev server:', err);

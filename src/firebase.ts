@@ -4,6 +4,7 @@ import {
   getFirestore,
   doc,
   getDocFromServer,
+  getDocs,
   collection,
   onSnapshot,
   setDoc,
@@ -16,10 +17,11 @@ import { Product, Category, WhatsAppOrder, ClientLead, SiteMediaConfig } from '.
 import {
   INITIAL_PRODUCTS,
   INITIAL_CATEGORIES,
-  INITIAL_ORDERS,
-  INITIAL_LEADS,
   INITIAL_MEDIA_CONFIG
 } from './data/initialData.ts';
+
+const DEMO_ORDER_IDS = new Set(['CMD-1082', 'CMD-1083', 'CMD-1084']);
+const DEMO_LEAD_IDS = new Set(['lead-1', 'lead-2', 'lead-3', 'lead-4', 'lead-5']);
 
 // Initialize Firebase App
 const app = initializeApp(firebaseConfig);
@@ -224,22 +226,14 @@ export function subscribeOrders(onData: (orders: WhatsAppOrder[]) => void) {
   return onSnapshot(
     colRef,
     (snapshot) => {
-      if (snapshot.empty) {
-        INITIAL_ORDERS.forEach(async (o) => {
-          try {
-            await setDoc(doc(db, 'orders', o.id), sanitizeForFirestore(o));
-          } catch (e) {
-            handleFirestoreError(e, OperationType.WRITE, `orders/${o.id}`);
-          }
-        });
-        onData(INITIAL_ORDERS);
-      } else {
-        const list: WhatsAppOrder[] = [];
-        snapshot.forEach((d) => {
-          list.push(d.data() as WhatsAppOrder);
-        });
-        onData(list);
-      }
+      const list: WhatsAppOrder[] = [];
+      snapshot.forEach((d) => {
+        const order = d.data() as WhatsAppOrder;
+        if (!DEMO_ORDER_IDS.has(order.id)) {
+          list.push(order);
+        }
+      });
+      onData(list);
     },
     (error) => {
       handleFirestoreError(error, OperationType.LIST, 'orders');
@@ -253,6 +247,15 @@ export async function saveOrderToDb(order: WhatsAppOrder): Promise<void> {
     await setDoc(doc(db, 'orders', order.id), cleanOrder);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `orders/${order.id}`);
+    throw error;
+  }
+}
+
+export async function deleteOrderFromDb(orderId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'orders', orderId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `orders/${orderId}`);
     throw error;
   }
 }
@@ -281,27 +284,36 @@ export function subscribeLeads(onData: (leads: ClientLead[]) => void) {
   return onSnapshot(
     colRef,
     (snapshot) => {
-      if (snapshot.empty) {
-        INITIAL_LEADS.forEach(async (l) => {
-          try {
-            await setDoc(doc(db, 'leads', l.id), sanitizeForFirestore(l));
-          } catch (e) {
-            handleFirestoreError(e, OperationType.WRITE, `leads/${l.id}`);
-          }
-        });
-        onData(INITIAL_LEADS);
-      } else {
-        const list: ClientLead[] = [];
-        snapshot.forEach((d) => {
-          list.push(d.data() as ClientLead);
-        });
-        onData(list);
-      }
+      const list: ClientLead[] = [];
+      snapshot.forEach((d) => {
+        const lead = d.data() as ClientLead;
+        if (!DEMO_LEAD_IDS.has(lead.id)) {
+          list.push(lead);
+        }
+      });
+      onData(list);
     },
     (error) => {
       handleFirestoreError(error, OperationType.LIST, 'leads');
     }
   );
+}
+
+export async function saveLeadToDb(lead: ClientLead): Promise<void> {
+  try {
+    await setDoc(doc(db, 'leads', lead.id), sanitizeForFirestore(lead));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `leads/${lead.id}`);
+  }
+}
+
+export async function deleteLeadFromDb(leadId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'leads', leadId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `leads/${leadId}`);
+    throw error;
+  }
 }
 
 // --- SITE MEDIA & HOMEPAGE BANNER CONFIG ---
@@ -336,4 +348,86 @@ export async function saveMediaConfigToDb(config: SiteMediaConfig): Promise<void
     throw error;
   }
 }
+
+// --- SERVER-SIDE CACHED CATALOG & ONE-SHOT ADMIN FETCHERS ---
+export interface CachedCatalogResponse {
+  products: Product[];
+  categories: Category[];
+  mediaConfig: SiteMediaConfig;
+  updatedAt?: number;
+  source?: string;
+}
+
+export async function fetchCatalogFromServer(): Promise<CachedCatalogResponse | null> {
+  try {
+    const res = await fetch('/api/catalog', {
+      headers: { Accept: 'application/json' }
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as CachedCatalogResponse;
+    if (data && Array.isArray(data.products) && Array.isArray(data.categories)) {
+      return data;
+    }
+    return null;
+  } catch (err) {
+    console.warn('Failed to fetch cached catalog from server:', err);
+    return null;
+  }
+}
+
+export async function syncServerCatalog(payload: {
+  product?: Product;
+  deletedProductId?: string;
+  category?: Category;
+  deletedCategoryId?: string;
+  mediaConfig?: SiteMediaConfig;
+  likedProductId?: string;
+  likeDelta?: number;
+  forceRefresh?: boolean;
+}): Promise<void> {
+  try {
+    await fetch('/api/catalog/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+  } catch (err) {
+    console.warn('Server catalog cache sync skipped:', err);
+  }
+}
+
+export async function fetchOrdersOnce(): Promise<WhatsAppOrder[] | null> {
+  try {
+    const snapshot = await getDocs(collection(db, 'orders'));
+    const list: WhatsAppOrder[] = [];
+    snapshot.forEach((d) => {
+      const order = d.data() as WhatsAppOrder;
+      if (!DEMO_ORDER_IDS.has(order.id)) {
+        list.push(order);
+      }
+    });
+    return list;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'orders');
+    return null;
+  }
+}
+
+export async function fetchLeadsOnce(): Promise<ClientLead[] | null> {
+  try {
+    const snapshot = await getDocs(collection(db, 'leads'));
+    const list: ClientLead[] = [];
+    snapshot.forEach((d) => {
+      const lead = d.data() as ClientLead;
+      if (!DEMO_LEAD_IDS.has(lead.id)) {
+        list.push(lead);
+      }
+    });
+    return list;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'leads');
+    return null;
+  }
+}
+
 

@@ -22,7 +22,10 @@ import {
   Image as ImageIcon,
   LogOut,
   Save,
-  Sparkles
+  Sparkles,
+  ArrowUp,
+  ArrowDown,
+  RefreshCw
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -38,6 +41,9 @@ interface AdminDashboardProps {
   onAddCategory: (name: string, icon: string) => void;
   onDeleteCategory: (id: string) => void;
   onUpdateOrderStatus: (orderId: string, status: WhatsAppOrder['status']) => void;
+  onDeleteOrder?: (orderId: string) => void;
+  onDeleteLead?: (leadId: string) => void;
+  onRefreshAdminData?: () => Promise<void> | void;
   onExitAdmin: () => void;
   onLogout?: () => void;
 }
@@ -55,10 +61,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onAddCategory,
   onDeleteCategory,
   onUpdateOrderStatus,
+  onDeleteOrder,
+  onDeleteLead,
+  onRefreshAdminData,
   onExitAdmin,
   onLogout
 }) => {
   const [activeSection, setActiveSection] = useState<'dashboard' | 'catalogue' | 'categories' | 'medias' | 'clients' | 'commandes'>('dashboard');
+  const [isRefreshingData, setIsRefreshingData] = useState(false);
 
   // Filters
   const [productSearch, setProductSearch] = useState('');
@@ -133,6 +143,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [heroImg, setHeroImg] = useState<string>(
     mediaConfig?.heroImage || '/src/assets/images/hero_fashion_burkina_1794167660891.jpg'
   );
+  const [heroImages, setHeroImages] = useState<string[]>(() => {
+    if (mediaConfig?.heroImages && mediaConfig.heroImages.length > 0) {
+      return mediaConfig.heroImages;
+    }
+    return [mediaConfig?.heroImage || '/src/assets/images/hero_fashion_burkina_1794167660891.jpg'];
+  });
+  const [selectedHeroIdx, setSelectedHeroIdx] = useState<number>(0);
+  const [newHeroImageUrl, setNewHeroImageUrl] = useState<string>('');
   const [heroTagline, setHeroTagline] = useState<string>(
     mediaConfig?.heroTagline || 'Ton style, ta signature'
   );
@@ -156,6 +174,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     if (mediaConfig) {
       setLogoUrl(mediaConfig.logoUrl || '');
       if (mediaConfig.heroImage) setHeroImg(mediaConfig.heroImage);
+      if (mediaConfig.heroImages && mediaConfig.heroImages.length > 0) {
+        setHeroImages(mediaConfig.heroImages);
+      } else if (mediaConfig.heroImage) {
+        setHeroImages([mediaConfig.heroImage]);
+      }
       if (mediaConfig.heroTagline) setHeroTagline(mediaConfig.heroTagline);
       if (mediaConfig.heroTitle) setHeroTitle(mediaConfig.heroTitle);
       if (mediaConfig.heroSubtitle) setHeroSubtitle(mediaConfig.heroSubtitle);
@@ -210,35 +233,84 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleHeroFileUpload = (files: FileList | null) => {
     if (!files || files.length === 0) return;
     setIsUploadingHero(true);
-    const file = files[0];
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        let width = img.width;
-        let height = img.height;
-        const maxDim = 950;
-        if (width > height && width > maxDim) {
-          height = Math.round((height * maxDim) / width);
-          width = maxDim;
-        } else if (height > maxDim) {
-          width = Math.round((width * maxDim) / height);
-          height = maxDim;
-        }
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height);
-          const compressed = canvas.toDataURL('image/jpeg', 0.85);
-          setHeroImg(compressed);
-        }
-        setIsUploadingHero(false);
+    let pending = files.length;
+
+    Array.from(files).forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          const maxDim = 820;
+          if (width > height && width > maxDim) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else if (height > maxDim) {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            const compressed = canvas.toDataURL('image/jpeg', 0.74);
+            setHeroImages((prev) => {
+              const next = [...prev, compressed];
+              setSelectedHeroIdx(next.length - 1);
+              setHeroImg(next[0]);
+              return next;
+            });
+          }
+          pending -= 1;
+          if (pending <= 0) setIsUploadingHero(false);
+        };
+        img.onerror = () => {
+          pending -= 1;
+          if (pending <= 0) setIsUploadingHero(false);
+        };
+        img.src = e.target?.result as string;
       };
-      img.src = e.target?.result as string;
-    };
-    reader.readAsDataURL(file);
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleAddHeroImageUrl = (urlToAdd?: string) => {
+    const clean = (urlToAdd ?? newHeroImageUrl).trim();
+    if (!clean) return;
+    setHeroImages((prev) => {
+      const next = [...prev, clean];
+      setSelectedHeroIdx(next.length - 1);
+      setHeroImg(next[0]);
+      return next;
+    });
+    if (!urlToAdd) setNewHeroImageUrl('');
+  };
+
+  const handleRemoveHeroImage = (idx: number) => {
+    if (heroImages.length <= 1) return;
+    setHeroImages((prev) => {
+      const next = prev.filter((_, i) => i !== idx);
+      setHeroImg(next[0]);
+      setSelectedHeroIdx((curr) => (curr >= next.length ? next.length - 1 : curr));
+      return next;
+    });
+  };
+
+  const handleMoveHeroImage = (idx: number, direction: -1 | 1) => {
+    const target = idx + direction;
+    if (target < 0 || target >= heroImages.length) return;
+    setHeroImages((prev) => {
+      const next = [...prev];
+      const temp = next[idx];
+      next[idx] = next[target];
+      next[target] = temp;
+      setHeroImg(next[0]);
+      setSelectedHeroIdx(target);
+      return next;
+    });
   };
 
   const handleSlideFileUpload = (slideIdx: number, files: FileList | null) => {
@@ -252,7 +324,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         const canvas = document.createElement('canvas');
         let width = img.width;
         let height = img.height;
-        const maxDim = 950;
+        const maxDim = 820;
         if (width > height && width > maxDim) {
           height = Math.round((height * maxDim) / width);
           width = maxDim;
@@ -265,7 +337,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.drawImage(img, 0, 0, width, height);
-          const compressed = canvas.toDataURL('image/jpeg', 0.85);
+          const compressed = canvas.toDataURL('image/jpeg', 0.72);
           setCarouselSlides((prev) =>
             prev.map((s, idx) => (idx === slideIdx ? { ...s, image: compressed } : s))
           );
@@ -279,9 +351,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const handleSaveMediaConfig = async () => {
     setIsSavingMedia(true);
+    const cleanHeroImages = heroImages.filter(Boolean);
     const newConfig: SiteMediaConfig = {
       logoUrl: logoUrl.trim(),
-      heroImage: heroImg,
+      heroImage: cleanHeroImages[0] || heroImg,
+      heroImages: cleanHeroImages.length > 0 ? cleanHeroImages : [heroImg],
       heroTagline,
       heroTitle,
       heroSubtitle,
@@ -297,14 +371,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleAddCarouselSlide = () => {
     const newSlide: CarouselSlide = {
       id: Date.now(),
-      kicker: 'NOUVELLE EXCLUSIVITÉ HUIZE',
-      title: 'Nouvelle Offre Tendance 2025',
-      desc: 'Article sélectionné pour son confort et son style unique à Ouagadougou.',
-      category: categories[0]?.slug || 'chaussures',
+      kicker: 'ANNONCE PUBLICITAIRE HUIZE',
+      title: 'Nouvelle Promotion ou Arrivage',
+      desc: 'Découvrez nos nouveautés disponibles au Burkina Faso avec livraison rapide.',
+      category: categories[0]?.slug || 'all',
       image: '/src/assets/images/product_velocity_sneakers_1794167661807.jpg',
       ctaText: 'Découvrir en boutique'
     };
     setCarouselSlides((prev) => [...prev, newSlide]);
+  };
+
+  const handleMoveCarouselSlide = (idx: number, direction: -1 | 1) => {
+    const targetIdx = idx + direction;
+    if (targetIdx < 0 || targetIdx >= carouselSlides.length) return;
+    setCarouselSlides((prev) => {
+      const next = [...prev];
+      const temp = next[idx];
+      next[idx] = next[targetIdx];
+      next[targetIdx] = temp;
+      return next;
+    });
   };
 
   const handleDeleteCarouselSlide = (idx: number) => {
@@ -486,9 +572,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return matchSearch && matchCat;
   });
 
-  // Calculate live dynamic metrics
+  // Calculate real live metrics from actual store data (zero fabricated figures)
   const totalStockCount = products.reduce((acc, p) => acc + p.stock, 0);
   const totalOrdersAmount = orders.reduce((acc, o) => acc + o.total, 0);
+  const confirmedOrdersAmount = orders
+    .filter((o) => o.status === 'paid' || o.status === 'delivered')
+    .reduce((acc, o) => acc + o.total, 0);
+  const pendingOrdersCount = orders.filter(
+    (o) => o.status === 'pending' || o.status === 'discussion'
+  ).length;
+  const confirmedOrdersCount = orders.filter(
+    (o) => o.status === 'paid' || o.status === 'delivered'
+  ).length;
+
+  const handleRefreshClick = async () => {
+    if (!onRefreshAdminData || isRefreshingData) return;
+    setIsRefreshingData(true);
+    try {
+      await onRefreshAdminData();
+    } finally {
+      setIsRefreshingData(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#F4F3EE] flex flex-col lg:flex-row text-[#202720]">
@@ -764,46 +869,45 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
         {/* Body Container */}
         <div className="p-4 sm:p-6 lg:p-8 flex flex-col gap-6 max-w-7xl w-full mx-auto">
-          {/* 1. METRICS / STATS GRID */}
+          {/* 1. REAL METRICS / STATS GRID */}
           <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-white p-5 rounded-2xl border border-[#E1E3DA] shadow-xs relative overflow-hidden border-l-4 border-l-[#D8F36A]">
+            <div className="bg-white p-5 rounded-2xl border border-[#E1E3DA] shadow-xs">
               <span className="text-xs font-bold uppercase tracking-wider text-[#6B726C]">Commandes WhatsApp</span>
               <p className="text-2xl sm:text-3xl font-extrabold text-[#123B2A] font-title my-1 tabular-nums">
-                142
+                {orders.length}
               </p>
-              <span className="text-xs font-semibold text-[#1F5A40] flex items-center gap-1">
-                <TrendingUp className="w-3.5 h-3.5" />
-                <span>+18% ce mois</span>
+              <span className="text-xs font-medium text-[#6B726C]">
+                {pendingOrdersCount} en cours · {confirmedOrdersCount} validée{confirmedOrdersCount > 1 ? 's' : ''}
               </span>
             </div>
 
-            <div className="bg-white p-5 rounded-2xl border border-[#E1E3DA] shadow-xs relative overflow-hidden border-l-4 border-l-[#1F5A40]">
-              <span className="text-xs font-bold uppercase tracking-wider text-[#6B726C]">Chiffre d'Affaires</span>
+            <div className="bg-white p-5 rounded-2xl border border-[#E1E3DA] shadow-xs">
+              <span className="text-xs font-bold uppercase tracking-wider text-[#6B726C]">Chiffre d&apos;Affaires</span>
               <p className="text-xl sm:text-2xl font-extrabold text-[#123B2A] font-title my-1 tabular-nums">
-                {formatFCFA(2845000 + totalOrdersAmount)}
+                {formatFCFA(confirmedOrdersAmount)}
               </p>
-              <span className="text-xs font-semibold text-[#1F5A40]">
-                Orange Money &amp; Moov
+              <span className="text-xs font-medium text-[#6B726C] tabular-nums">
+                Total commandes : {formatFCFA(totalOrdersAmount)}
               </span>
             </div>
 
-            <div className="bg-white p-5 rounded-2xl border border-[#E1E3DA] shadow-xs relative overflow-hidden border-l-4 border-l-[#123B2A]">
+            <div className="bg-white p-5 rounded-2xl border border-[#E1E3DA] shadow-xs">
               <span className="text-xs font-bold uppercase tracking-wider text-[#6B726C]">Articles Catalogue</span>
               <p className="text-2xl sm:text-3xl font-extrabold text-[#123B2A] font-title my-1 tabular-nums">
                 {products.length}
               </p>
-              <span className="text-xs text-[#6B726C]">
+              <span className="text-xs text-[#6B726C] tabular-nums">
                 {totalStockCount} unités en stock
               </span>
             </div>
 
-            <div className="bg-white p-5 rounded-2xl border border-[#E1E3DA] shadow-xs relative overflow-hidden border-l-4 border-l-[#25D366]">
-              <span className="text-xs font-bold uppercase tracking-wider text-[#6B726C]">Contacts &amp; Prospects</span>
+            <div className="bg-white p-5 rounded-2xl border border-[#E1E3DA] shadow-xs">
+              <span className="text-xs font-bold uppercase tracking-wider text-[#6B726C]">Contacts &amp; Clients</span>
               <p className="text-2xl sm:text-3xl font-extrabold text-[#123B2A] font-title my-1 tabular-nums">
-                {89 + leads.length}
+                {leads.length}
               </p>
-              <span className="text-xs font-semibold text-[#1F5A40]">
-                15 nouveaux cette semaine
+              <span className="text-xs font-medium text-[#6B726C]">
+                Clients enregistrés sur le site
               </span>
             </div>
           </section>
@@ -1097,80 +1201,136 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
 
                 <div className="divide-y divide-[#E1E3DA]">
-                  {leads.map((lead) => (
-                    <div key={lead.id} className="py-3 flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full bg-[#FAF9F5] border border-[#E1E3DA] text-[#123B2A] font-bold flex items-center justify-center text-xs shrink-0">
-                          {lead.avatar}
+                  {leads.length === 0 ? (
+                    <div className="py-8 text-center text-xs text-[#6B726C]">
+                      Aucun contact client enregistré pour le moment. Les clients ayant passé commande apparaîtront automatiquement ici.
+                    </div>
+                  ) : (
+                    leads.map((lead) => (
+                      <div key={lead.id} className="py-3 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-9 h-9 rounded-full bg-[#FAF9F5] border border-[#E1E3DA] text-[#123B2A] font-bold flex items-center justify-center text-xs shrink-0">
+                            {lead.avatar}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-bold text-xs sm:text-sm text-[#123B2A] truncate">{lead.name}</p>
+                            <p className="text-[11px] text-[#6B726C] truncate">{lead.city} • {lead.notes}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-bold text-xs sm:text-sm text-[#123B2A]">{lead.name}</p>
-                          <p className="text-[11px] text-[#6B726C]">{lead.city} • {lead.notes}</p>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {lead.phone && lead.phone !== 'Non précisé' && (
+                            <a
+                              href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
+                                `Bonjour ${lead.name}, c'est l'équipe HUIZE SHOP Ouagadougou. Suite à votre commande, comment pouvons-nous vous aider ?`
+                              )}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-[#25D366] hover:bg-[#20ba5a] text-white font-bold text-xs shadow-xs"
+                            >
+                              <MessageCircle className="w-3.5 h-3.5 fill-current" />
+                              <span>Contacter</span>
+                            </a>
+                          )}
+                          {onDeleteLead && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (confirm(`Supprimer le contact "${lead.name}" ?`)) {
+                                  onDeleteLead(lead.id);
+                                }
+                              }}
+                              title="Supprimer ce contact"
+                              className="p-1.5 rounded-full text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </div>
-
-                      <a
-                        href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
-                          `Bonjour ${lead.name}, c'est l'équipe HUIZE SHOP Ouagadougou. Avez-vous des questions sur nos modèles disponibles ?`
-                        )}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-[#25D366] hover:bg-[#20ba5a] text-white font-bold text-xs shadow-xs"
-                      >
-                        <MessageCircle className="w-3.5 h-3.5 fill-current" />
-                        <span>Contacter</span>
-                      </a>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               </div>
             )}
 
-            {/* LIVE WHATSAPP ORDERS (5/6 Cols) */}
+            {/* LIVE WHATSAPP ORDERS (6 Cols) */}
             {(activeSection === 'dashboard' || activeSection === 'commandes') && (
               <div className="lg:col-span-6 bg-white border border-[#E1E3DA] rounded-2xl shadow-sm p-5">
-                <div className="flex items-center justify-between mb-4 border-b border-[#E1E3DA] pb-3">
+                <div className="flex items-center justify-between mb-4 border-b border-[#E1E3DA] pb-3 gap-2">
                   <h2 className="text-base font-bold font-title text-[#123B2A] flex items-center gap-2">
                     <MessageCircle className="w-4 h-4 text-[#25D366]" />
-                    <span>Dernières Activités WhatsApp</span>
+                    <span>Commandes &amp; Activités WhatsApp</span>
                   </h2>
-                  <span className="text-[11px] text-[#1F5A40] font-bold flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-[#25D366]" />
-                    <span>En temps réel</span>
-                  </span>
+                  {onRefreshAdminData && (
+                    <button
+                      type="button"
+                      onClick={handleRefreshClick}
+                      disabled={isRefreshingData}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-[#E1E3DA] bg-[#FAF9F5] hover:bg-[#EFEFE6] text-[#123B2A] text-[11px] font-bold transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${isRefreshingData ? 'animate-spin' : ''}`} />
+                      <span>{isRefreshingData ? 'Actualisation...' : 'Actualiser'}</span>
+                    </button>
+                  )}
                 </div>
 
                 <div className="flex flex-col gap-3">
-                  {orders.map((ord) => (
-                    <div
-                      key={ord.id}
-                      className="p-3.5 rounded-xl border border-[#E1E3DA] bg-[#FAF9F5] flex items-center justify-between gap-3 text-xs"
-                    >
-                      <div>
-                        <p className="font-bold text-[#123B2A]">{ord.id} • {ord.customerName}</p>
-                        <p className="text-[#6B726C] text-[11px]">{ord.itemsSummary}</p>
-                        <p className="text-[10px] text-[#1F5A40] mt-0.5">{ord.city} • {ord.date}</p>
-                      </div>
-
-                      <div className="text-right shrink-0">
-                        <p className="font-bold text-[#123B2A] tabular-nums font-title text-sm">
-                          {formatFCFA(ord.total)}
-                        </p>
-                        <select
-                          value={ord.status}
-                          onChange={(e) =>
-                            onUpdateOrderStatus(ord.id, e.target.value as WhatsAppOrder['status'])
-                          }
-                          className="mt-1 text-[10px] font-bold p-1 rounded-md bg-white border border-[#E1E3DA]"
-                        >
-                          <option value="pending">À livrer</option>
-                          <option value="paid">Payé (Orange/Moov)</option>
-                          <option value="delivered">Livré</option>
-                          <option value="discussion">En discussion</option>
-                        </select>
-                      </div>
+                  {orders.length === 0 ? (
+                    <div className="py-8 text-center text-xs text-[#6B726C]">
+                      Aucune commande réelle enregistrée pour le moment. Les commandes envoyées par les clients depuis le panier ou les fiches produits apparaîtront ici.
                     </div>
-                  ))}
+                  ) : (
+                    orders.map((ord) => (
+                      <div
+                        key={ord.id}
+                        className="p-3.5 rounded-xl border border-[#E1E3DA] bg-[#FAF9F5] flex items-center justify-between gap-3 text-xs"
+                      >
+                        <div className="min-w-0">
+                          <p className="font-bold text-[#123B2A] truncate">
+                            {ord.id} • {ord.customerName}
+                            {ord.phone && ord.phone !== 'Non précisé' ? ` (${ord.phone})` : ''}
+                          </p>
+                          <p className="text-[#6B726C] text-[11px]">{ord.itemsSummary}</p>
+                          <p className="text-[10px] text-[#1F5A40] mt-0.5">{ord.city} • {ord.date}</p>
+                        </div>
+
+                        <div className="text-right shrink-0 flex flex-col items-end gap-1">
+                          <p className="font-bold text-[#123B2A] tabular-nums font-title text-sm">
+                            {formatFCFA(ord.total)}
+                          </p>
+                          <div className="flex items-center gap-1.5">
+                            <select
+                              value={ord.status}
+                              onChange={(e) =>
+                                onUpdateOrderStatus(ord.id, e.target.value as WhatsAppOrder['status'])
+                              }
+                              className="text-[10px] font-bold p-1 rounded-md bg-white border border-[#E1E3DA]"
+                            >
+                              <option value="pending">À livrer</option>
+                              <option value="paid">Payé (Orange/Moov)</option>
+                              <option value="delivered">Livré</option>
+                              <option value="discussion">En discussion</option>
+                            </select>
+                            {onDeleteOrder && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (confirm(`Supprimer la commande ${ord.id} ?`)) {
+                                    onDeleteOrder(ord.id);
+                                  }
+                                }}
+                                title="Supprimer cette commande"
+                                className="p-1 rounded-md text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             )}
@@ -1273,55 +1433,137 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                 {/* 1. HERO BANNER PHOTO */}
                 <div className="bg-white border border-[#E1E3DA] rounded-2xl p-6 shadow-xs">
-                  <div className="flex items-center justify-between border-b border-[#E1E3DA] pb-3 mb-5">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E1E3DA] pb-3 mb-5">
                     <div>
                       <h3 className="text-base font-bold font-title text-[#123B2A] flex items-center gap-2">
                         <Sparkles className="w-4 h-4 text-[#D8F36A]" />
-                        <span>1. Photo &amp; Textes de l'Hero (Grande bannière d'accueil)</span>
+                        <span>
+                          1. Photos du Hero ({heroImages.length} photo{heroImages.length > 1 ? 's' : ''}) &amp; Textes d&apos;Accueil
+                        </span>
                       </h3>
                       <p className="text-xs text-[#6B726C]">
-                        L'image principale vue par les clients dès leur arrivée sur la boutique
+                        Ajoutez plusieurs photos dans l&apos;entête Hero : elles défileront automatiquement toutes les 5 secondes.
                       </p>
                     </div>
                     <span className="text-xs bg-[#FAF9F5] border border-[#E1E3DA] text-[#123B2A] font-semibold px-2.5 py-1 rounded-full">
-                      Format Portrait / Carré recommandé
+                      Défilement auto : 5 sec
                     </span>
                   </div>
 
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                    {/* Hero Preview & File Uploader */}
+                    {/* Hero Preview & Multi-File Uploader */}
                     <div className="lg:col-span-5 flex flex-col gap-3">
                       <div className="relative rounded-xl overflow-hidden border border-[#E1E3DA] aspect-4/5 bg-[#123B2A] shadow-md group">
                         <img
-                          src={heroImg}
+                          src={heroImages[selectedHeroIdx] || heroImages[0] || heroImg}
                           alt="Aperçu Hero"
                           className="w-full h-full object-cover object-top"
                         />
+                        {heroImages.length > 1 && (
+                          <span className="absolute top-2.5 left-2.5 bg-black/65 text-[#D8F36A] text-[11px] font-bold px-2.5 py-1 rounded-full">
+                            Photo {selectedHeroIdx + 1} / {heroImages.length}
+                          </span>
+                        )}
                         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center gap-2 transition-opacity p-4 text-center">
                           <label className="px-4 py-2 rounded-full bg-white text-[#123B2A] text-xs font-bold shadow-lg hover:bg-[#D8F36A] cursor-pointer">
-                            <span>Changer la photo</span>
+                            <span>+ Ajouter des photos</span>
                             <input
                               type="file"
                               accept="image/*"
+                              multiple
                               onChange={(e) => handleHeroFileUpload(e.target.files)}
                               className="hidden"
                             />
                           </label>
-                          <p className="text-[11px] text-white">Glisser ou cliquer pour importer</p>
+                          <p className="text-[11px] text-white">Vous pouvez sélectionner plusieurs photos à la fois</p>
                         </div>
                       </div>
 
-                      {/* File Uploader Bar */}
+                      {/* Hero Images Thumbnail Strip */}
+                      <div className="bg-[#FAF9F5] border border-[#E1E3DA] rounded-xl p-3 space-y-2">
+                        <div className="flex items-center justify-between text-[11px] font-bold text-[#123B2A]">
+                          <span>Images du Hero ({heroImages.length})</span>
+                          <span className="text-[#6B726C] font-normal">Ordre de défilement</span>
+                        </div>
+                        <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                          {heroImages.map((imgUrl, idx) => (
+                            <div
+                              key={`${idx}-${imgUrl.slice(0, 24)}`}
+                              className={`relative rounded-lg overflow-hidden border-2 bg-white aspect-square cursor-pointer group ${
+                                selectedHeroIdx === idx ? 'border-[#123B2A] ring-2 ring-[#D8F36A]' : 'border-[#E1E3DA]'
+                              }`}
+                              onClick={() => setSelectedHeroIdx(idx)}
+                            >
+                              <img
+                                src={imgUrl}
+                                alt={`Hero ${idx + 1}`}
+                                className="w-full h-full object-cover"
+                              />
+                              <span className="absolute top-1 left-1 bg-black/65 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">
+                                #{idx + 1}
+                              </span>
+                              {heroImages.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRemoveHeroImage(idx);
+                                  }}
+                                  title="Supprimer cette photo"
+                                  className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center shadow-xs hover:bg-red-700 cursor-pointer"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              )}
+                              {heroImages.length > 1 && (
+                                <div className="absolute bottom-1 inset-x-1 flex justify-between opacity-90 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                                  <button
+                                    type="button"
+                                    disabled={idx === 0}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleMoveHeroImage(idx, -1);
+                                    }}
+                                    title="Avancer"
+                                    className="px-1 py-0.5 rounded bg-black/70 text-white text-[9px] disabled:opacity-30 cursor-pointer"
+                                  >
+                                    ◀
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={idx === heroImages.length - 1}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleMoveHeroImage(idx, 1);
+                                    }}
+                                    title="Reculer"
+                                    className="px-1 py-0.5 rounded bg-black/70 text-white text-[9px] disabled:opacity-30 cursor-pointer"
+                                  >
+                                    ▶
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Multi-File Uploader Bar */}
                       <label className="w-full border-2 border-dashed border-[#1F5A40]/30 hover:border-[#1F5A40] rounded-xl p-3 bg-[#FAF9F5] text-center transition-colors cursor-pointer block">
                         <input
                           type="file"
                           accept="image/*"
+                          multiple
                           onChange={(e) => handleHeroFileUpload(e.target.files)}
                           className="hidden"
                         />
                         <div className="flex items-center justify-center gap-2 text-xs font-bold text-[#123B2A]">
                           <Upload className="w-4 h-4 text-[#1F5A40]" />
-                          <span>{isUploadingHero ? 'Compression de la photo...' : 'Importer une photo Hero (Téléphone / PC)'}</span>
+                          <span>
+                            {isUploadingHero
+                              ? 'Compression des photos...'
+                              : 'Ajouter une ou plusieurs photos Hero (Téléphone / PC)'}
+                          </span>
                         </div>
                       </label>
                     </div>
@@ -1330,44 +1572,53 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <div className="lg:col-span-7 flex flex-col gap-4 text-xs">
                       <div>
                         <label className="block font-bold text-[#123B2A] mb-1">
-                          URL directe de la photo Hero
+                          Ajouter une photo Hero par URL
                         </label>
-                        <input
-                          type="text"
-                          value={heroImg}
-                          onChange={(e) => setHeroImg(e.target.value)}
-                          placeholder="https://... ou chemin d'image"
-                          className="w-full p-2.5 rounded-lg border border-[#E1E3DA] text-xs focus:outline-[#1F5A40] bg-[#FAF9F5]"
-                        />
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={newHeroImageUrl}
+                            onChange={(e) => setNewHeroImageUrl(e.target.value)}
+                            placeholder="https://... ou chemin d'image à ajouter"
+                            className="flex-1 p-2.5 rounded-lg border border-[#E1E3DA] text-xs focus:outline-[#1F5A40] bg-[#FAF9F5]"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleAddHeroImageUrl()}
+                            className="px-4 py-2 rounded-lg bg-[#123B2A] hover:bg-[#1F5A40] text-white text-xs font-bold cursor-pointer shrink-0"
+                          >
+                            + Ajouter
+                          </button>
+                        </div>
                         <div className="flex flex-wrap gap-1.5 mt-2">
-                          <span className="text-[11px] text-[#6B726C] self-center mr-1">Modèles :</span>
+                          <span className="text-[11px] text-[#6B726C] self-center mr-1">Ajouter modèle :</span>
                           <button
                             type="button"
-                            onClick={() => setHeroImg('/src/assets/images/hero_fashion_burkina_1794167660891.jpg')}
+                            onClick={() => handleAddHeroImageUrl('/src/assets/images/hero_fashion_burkina_1794167660891.jpg')}
                             className="px-2 py-0.5 rounded border border-[#E1E3DA] bg-white text-[10px] font-semibold text-[#123B2A] hover:bg-[#FAF9F5] cursor-pointer"
                           >
-                            Lookbook Burkina
+                            + Lookbook Burkina
                           </button>
                           <button
                             type="button"
-                            onClick={() => setHeroImg('/src/assets/images/product_velocity_sneakers_1794167661807.jpg')}
+                            onClick={() => handleAddHeroImageUrl('/src/assets/images/product_velocity_sneakers_1794167661807.jpg')}
                             className="px-2 py-0.5 rounded border border-[#E1E3DA] bg-white text-[10px] font-semibold text-[#123B2A] hover:bg-[#FAF9F5] cursor-pointer"
                           >
-                            Sneakers
+                            + Sneakers
                           </button>
                           <button
                             type="button"
-                            onClick={() => setHeroImg('/src/assets/images/product_sahel_leather_sandals_1794167662030.jpg')}
+                            onClick={() => handleAddHeroImageUrl('/src/assets/images/product_sahel_leather_sandals_1794167662030.jpg')}
                             className="px-2 py-0.5 rounded border border-[#E1E3DA] bg-white text-[10px] font-semibold text-[#123B2A] hover:bg-[#FAF9F5] cursor-pointer"
                           >
-                            Sandales Cuir
+                            + Sandales Cuir
                           </button>
                           <button
                             type="button"
-                            onClick={() => setHeroImg('/src/assets/images/product_streetwear_tshirt_1794167662293.jpg')}
+                            onClick={() => handleAddHeroImageUrl('/src/assets/images/product_streetwear_tshirt_1794167662293.jpg')}
                             className="px-2 py-0.5 rounded border border-[#E1E3DA] bg-white text-[10px] font-semibold text-[#123B2A] hover:bg-[#FAF9F5] cursor-pointer"
                           >
-                            T-shirt
+                            + T-shirt
                           </button>
                         </div>
                       </div>
@@ -1413,26 +1664,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 </div>
 
-                {/* 2. CAROUSEL BANNERS (PRODUITS QUI FILENT) */}
+                {/* 2. CAROUSEL BANNERS (PANNEAU PUBLICITAIRE DÉFILANT) */}
                 <div className="bg-white border border-[#E1E3DA] rounded-2xl p-6 shadow-xs">
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-[#E1E3DA] pb-3 mb-5 gap-2">
                     <div>
                       <h3 className="text-base font-bold font-title text-[#123B2A] flex items-center gap-2">
                         <ImageIcon className="w-4 h-4 text-[#1F5A40]" />
-                        <span>2. Produits qui défilent (Bannières du Carrousel)</span>
+                        <span>
+                          2. Panneau publicitaire défilant ({carouselSlides.length} annonce{carouselSlides.length > 1 ? 's' : ''})
+                        </span>
                       </h3>
                       <p className="text-xs text-[#6B726C]">
-                        Ces bannières défilent automatiquement sur la page d'accueil avec vos photos et offres phares
+                        Ajoutez autant d&apos;annonces que vous souhaitez : elles défilent automatiquement horizontalement sur la page d&apos;accueil (et au glissement tactile sur mobile).
                       </p>
                     </div>
 
                     <button
                       type="button"
                       onClick={handleAddCarouselSlide}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#FAF9F5] hover:bg-[#EFEFE6] border border-[#E1E3DA] text-[#123B2A] text-xs font-bold rounded-lg transition-colors cursor-pointer"
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-[#123B2A] hover:bg-[#1F5A40] text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shrink-0"
                     >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>Ajouter une diapositive</span>
+                      <Plus className="w-3.5 h-3.5 text-[#D8F36A]" />
+                      <span>Ajouter une annonce</span>
                     </button>
                   </div>
 
@@ -1492,20 +1745,40 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                         {/* Slide Content Fields */}
                         <div className="flex-1 w-full grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                          <div className="sm:col-span-2 flex items-center justify-between border-b border-[#E1E3DA] pb-2">
+                          <div className="sm:col-span-2 flex flex-wrap items-center justify-between gap-2 border-b border-[#E1E3DA] pb-2">
                             <span className="font-bold text-[#123B2A] text-xs">
-                              Diapositive #{idx + 1}
+                              Annonce publicitaire #{idx + 1}
                             </span>
-                            {carouselSlides.length > 1 && (
+                            <div className="flex items-center gap-2">
                               <button
                                 type="button"
-                                onClick={() => handleDeleteCarouselSlide(idx)}
-                                className="text-red-600 hover:text-red-800 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                                disabled={idx === 0}
+                                onClick={() => handleMoveCarouselSlide(idx, -1)}
+                                title="Monter cette annonce"
+                                className="p-1.5 rounded-md bg-white border border-[#E1E3DA] text-[#123B2A] hover:bg-[#EFEFE6] disabled:opacity-35 cursor-pointer disabled:cursor-not-allowed"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
-                                <span>Supprimer cette bannière</span>
+                                <ArrowUp className="w-3.5 h-3.5" />
                               </button>
-                            )}
+                              <button
+                                type="button"
+                                disabled={idx === carouselSlides.length - 1}
+                                onClick={() => handleMoveCarouselSlide(idx, 1)}
+                                title="Descendre cette annonce"
+                                className="p-1.5 rounded-md bg-white border border-[#E1E3DA] text-[#123B2A] hover:bg-[#EFEFE6] disabled:opacity-35 cursor-pointer disabled:cursor-not-allowed"
+                              >
+                                <ArrowDown className="w-3.5 h-3.5" />
+                              </button>
+                              {carouselSlides.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteCarouselSlide(idx)}
+                                  className="text-red-600 hover:text-red-800 text-xs font-semibold flex items-center gap-1 cursor-pointer ml-1"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <span>Supprimer</span>
+                                </button>
+                              )}
+                            </div>
                           </div>
 
                           <div>
@@ -1524,7 +1797,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </div>
 
                           <div>
-                            <label className="block font-bold text-[#123B2A] mb-1">Titre de l'article / Offre</label>
+                            <label className="block font-bold text-[#123B2A] mb-1">Titre de l'annonce / Offre</label>
                             <input
                               type="text"
                               value={slide.title}
@@ -1554,7 +1827,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </div>
 
                           <div>
-                            <label className="block font-bold text-[#123B2A] mb-1">Catégorie liée</label>
+                            <label className="block font-bold text-[#123B2A] mb-1">Action au clic</label>
                             <select
                               value={slide.category}
                               onChange={(e) => {
@@ -1566,6 +1839,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               className="w-full p-2 bg-white rounded-lg border border-[#E1E3DA] text-xs"
                             >
                               <option value="all">Toute la boutique</option>
+                              <option value="whatsapp">💬 Ouvrir WhatsApp (offre directe)</option>
                               {categories.map((c) => (
                                 <option key={c.id} value={c.slug}>
                                   {c.icon} {c.name}
@@ -1588,20 +1862,53 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               className="w-full p-2 bg-white rounded-lg border border-[#E1E3DA] text-xs"
                             />
                           </div>
+
+                          {slide.category === 'whatsapp' && (
+                            <div className="sm:col-span-2">
+                              <label className="block font-bold text-[#123B2A] mb-1">
+                                Message WhatsApp pré-rempli (optionnel)
+                              </label>
+                              <input
+                                type="text"
+                                value={slide.whatsappMessage || ''}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setCarouselSlides((prev) =>
+                                    prev.map((s, i) => (i === idx ? { ...s, whatsappMessage: val } : s))
+                                  );
+                                }}
+                                placeholder={`Bonjour HUIZE SHOP, je suis intéressé(e) par l'annonce "${slide.title}".`}
+                                className="w-full p-2 bg-white rounded-lg border border-[#E1E3DA] text-xs"
+                              />
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))}
                   </div>
 
-                  {/* Save button at bottom of carousel section */}
-                  <div className="mt-6 pt-4 border-t border-[#E1E3DA] flex items-center justify-end gap-3">
+                  {/* Save & Add button at bottom of carousel section */}
+                  <div className="mt-6 pt-4 border-t border-[#E1E3DA] flex flex-wrap items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={handleAddCarouselSlide}
+                      className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-[#FAF9F5] hover:bg-[#EFEFE6] border border-[#E1E3DA] text-[#123B2A] text-xs font-bold rounded-full transition-colors cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Ajouter une autre annonce</span>
+                    </button>
+
                     <button
                       onClick={handleSaveMediaConfig}
                       disabled={isSavingMedia}
                       className="inline-flex items-center gap-2 px-8 py-3 rounded-full bg-[#123B2A] hover:bg-[#1F5A40] text-white text-xs sm:text-sm font-bold shadow-md transition-all active:scale-95 cursor-pointer disabled:opacity-50"
                     >
                       <Save className="w-4 h-4 text-[#D8F36A]" />
-                      <span>{isSavingMedia ? 'Enregistrement en cours...' : '💾 Publier les photos & bannières'}</span>
+                      <span>
+                        {isSavingMedia
+                          ? 'Enregistrement en cours...'
+                          : `💾 Publier les annonces (${carouselSlides.length})`}
+                      </span>
                     </button>
                   </div>
                 </div>

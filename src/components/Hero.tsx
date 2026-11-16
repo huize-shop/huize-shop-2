@@ -1,11 +1,19 @@
-import React from 'react';
-import { MessageCircle, ArrowRight, Sparkles, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  MessageCircle,
+  ArrowRight,
+  Sparkles,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight
+} from 'lucide-react';
 import { HERO_IMAGE } from '../data/initialData.ts';
 import { getDirectWhatsAppUrl } from '../utils/whatsapp.ts';
 
 interface HeroProps {
   onExploreShop: () => void;
   heroImage?: string;
+  heroImages?: string[];
   heroTagline?: string;
   heroTitle?: string;
   heroSubtitle?: string;
@@ -14,11 +22,71 @@ interface HeroProps {
 export const Hero: React.FC<HeroProps> = ({
   onExploreShop,
   heroImage,
+  heroImages,
   heroTagline,
   heroTitle,
   heroSubtitle
 }) => {
-  const currentHeroImage = heroImage || HERO_IMAGE;
+  const imagesList =
+    heroImages && heroImages.filter(Boolean).length > 0
+      ? heroImages.filter(Boolean)
+      : [heroImage || HERO_IMAGE];
+
+  const [currentIdx, setCurrentIdx] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  const safeIdx = imagesList.length > 0 ? currentIdx % imagesList.length : 0;
+
+  useEffect(() => {
+    if (currentIdx >= imagesList.length && imagesList.length > 0) {
+      setCurrentIdx(0);
+    }
+  }, [imagesList.length, currentIdx]);
+
+  useEffect(() => {
+    if (imagesList.length <= 1 || isPaused) return;
+    const timer = setInterval(() => {
+      setCurrentIdx((prev) => (prev + 1) % imagesList.length);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [imagesList.length, isPaused]);
+
+  const handlePrev = () => {
+    setCurrentIdx((prev) => (prev - 1 + imagesList.length) % imagesList.length);
+  };
+
+  const handleNext = () => {
+    setCurrentIdx((prev) => (prev + 1) % imagesList.length);
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartRef.current = {
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY
+    };
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (!touchStartRef.current || imagesList.length <= 1) {
+      touchStartRef.current = null;
+      return;
+    }
+    const diffX = touchStartRef.current.x - e.changedTouches[0].clientX;
+    const diffY = touchStartRef.current.y - e.changedTouches[0].clientY;
+    if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 35) {
+      if (diffX > 0) {
+        handleNext();
+      } else {
+        handlePrev();
+      }
+    }
+    touchStartRef.current = null;
+  };
+
+  const handleTouchCancel = () => {
+    touchStartRef.current = null;
+  };
 
   return (
     <section className="relative overflow-hidden bg-radial from-[#1F5A40] via-[#123B2A] to-[#0A2318] text-white py-12 md:py-20">
@@ -85,17 +153,71 @@ export const Hero: React.FC<HeroProps> = ({
             </div>
           </div>
 
-          {/* Right Media Column */}
+          {/* Right Media Column (Multi-image auto-sliding every 5 seconds) */}
           <div className="lg:col-span-5">
-            <div className="relative mx-auto max-w-md lg:max-w-none rounded-2xl overflow-hidden border-2 border-white/20 shadow-2xl aspect-4/5 bg-[#123B2A]">
-              <img
-                src={currentHeroImage}
-                alt="Lookbook HUIZE SHOP Ouagadougou"
-                className="w-full h-full object-cover object-top hover:scale-102 transition-transform duration-700"
-              />
+            <div
+              className="group relative mx-auto max-w-md lg:max-w-none rounded-2xl overflow-hidden border-2 border-white/20 shadow-2xl aspect-4/5 bg-[#123B2A] touch-pan-y"
+              onMouseEnter={() => setIsPaused(true)}
+              onMouseLeave={() => setIsPaused(false)}
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+              onTouchCancel={handleTouchCancel}
+            >
+              {/* Sliding Track */}
+              <div
+                className="flex h-full transition-transform duration-700 ease-out will-change-transform"
+                style={{ transform: `translateX(-${safeIdx * 100}%)` }}
+              >
+                {imagesList.map((imgSrc, idx) => (
+                  <div key={`${idx}-${imgSrc.slice(0, 32)}`} className="w-full h-full shrink-0">
+                    <img
+                      src={imgSrc}
+                      alt={`Lookbook HUIZE SHOP Ouagadougou ${idx + 1}`}
+                      className="w-full h-full object-cover object-top"
+                    />
+                  </div>
+                ))}
+              </div>
+
               <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent pointer-events-none" />
 
-              <div className="absolute bottom-4 left-4 right-4 bg-white/95 backdrop-blur-md p-3.5 rounded-xl border border-white/30 text-[#123B2A] flex items-center justify-between">
+              {/* Slide dots & arrows when multiple Hero images are configured */}
+              {imagesList.length > 1 && (
+                <>
+                  <div className="absolute top-3.5 right-3.5 z-20 flex items-center gap-1.5 bg-black/40 backdrop-blur-xs px-2.5 py-1.5 rounded-full">
+                    {imagesList.map((_, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => setCurrentIdx(idx)}
+                        aria-label={`Photo Hero ${idx + 1}`}
+                        className={`h-2 rounded-full transition-all cursor-pointer ${
+                          safeIdx === idx ? 'w-5 bg-[#D8F36A]' : 'w-2 bg-white/55 hover:bg-white/85'
+                        }`}
+                      />
+                    ))}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handlePrev}
+                    aria-label="Photo Hero précédente"
+                    className="absolute left-2.5 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-black/45 hover:bg-black/75 text-white flex items-center justify-center opacity-85 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity cursor-pointer"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleNext}
+                    aria-label="Photo Hero suivante"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-black/45 hover:bg-black/75 text-white flex items-center justify-center opacity-85 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity cursor-pointer"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </>
+              )}
+
+              <div className="absolute bottom-4 left-4 right-4 z-20 bg-white/95 backdrop-blur-md p-3.5 rounded-xl border border-white/30 text-[#123B2A] flex items-center justify-between">
                 <div>
                   <p className="text-[11px] uppercase tracking-wider font-extrabold text-[#1F5A40]">Collection Urbaine</p>
                   <p className="text-sm font-bold font-title">Sneakers &amp; Mode Ouaga 2025</p>

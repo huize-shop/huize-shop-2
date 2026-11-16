@@ -10,6 +10,7 @@ interface ProductDetailModalProps {
   isLiked?: boolean;
   onToggleLike?: (productId: string) => void;
   onOpenShare?: (product: Product) => void;
+  onDirectWhatsAppOrder?: (product: Product, size: string, quantity: number) => void;
 }
 
 export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
@@ -18,7 +19,8 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   onAddToCart,
   isLiked = false,
   onToggleLike,
-  onOpenShare
+  onOpenShare,
+  onDirectWhatsAppOrder
 }) => {
   const [selectedSize, setSelectedSize] = useState<string>('');
   const [quantity, setQuantity] = useState<number>(1);
@@ -245,6 +247,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 href={getProductWhatsAppUrl(product, selectedSize, quantity)}
                 target="_blank"
                 rel="noopener noreferrer"
+                onClick={() => onDirectWhatsAppOrder?.(product, selectedSize, quantity)}
                 className="w-full inline-flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-[#25D366] hover:bg-[#20ba5a] text-white font-bold text-sm shadow-md transition-all active:scale-98"
               >
                 <MessageCircle className="w-5 h-5 fill-white text-[#25D366]" />

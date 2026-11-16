@@ -178,84 +178,9 @@ export const INITIAL_CATEGORIES: Category[] = [
   }
 ];
 
-export const INITIAL_ORDERS: WhatsAppOrder[] = [
-  {
-    id: 'CMD-1084',
-    customerName: 'Ibrahim Ouédraogo',
-    phone: '+226 70 12 34 56',
-    itemsSummary: '1x Sneaker Velocity Red (Pointure 42)',
-    total: 22500,
-    status: 'pending',
-    statusLabel: 'À livrer',
-    date: "Aujourd'hui, 10:45",
-    city: 'Ouagadougou, Zone du Bois'
-  },
-  {
-    id: 'CMD-1083',
-    customerName: 'Salif Kaboré',
-    phone: '+226 76 98 76 54',
-    itemsSummary: '1x Sandale Sahel (41) + 1x T-shirt (L)',
-    total: 27500,
-    status: 'paid',
-    statusLabel: 'Payé (Moov Money)',
-    date: "Aujourd'hui, 09:20",
-    city: 'Bobo-Dioulasso, Koko'
-  },
-  {
-    id: 'CMD-1082',
-    customerName: 'Aminata Sawadogo',
-    phone: '+226 55 43 21 00',
-    itemsSummary: 'Panier envoyé via WhatsApp (2 articles)',
-    total: 37500,
-    status: 'discussion',
-    statusLabel: 'En discussion',
-    date: 'Hier, 17:15',
-    city: 'Ouagadougou, Karpala'
-  }
-];
+export const INITIAL_ORDERS: WhatsAppOrder[] = [];
 
-export const INITIAL_LEADS: ClientLead[] = [
-  {
-    id: 'lead-1',
-    name: 'Ibrahim Ouédraogo',
-    city: 'Ouagadougou',
-    notes: 'Intéressé par Sneaker Velocity (42)',
-    phone: '+226 70 12 34 56',
-    avatar: 'IO'
-  },
-  {
-    id: 'lead-2',
-    name: 'Salif Kaboré',
-    city: 'Bobo-Dioulasso',
-    notes: 'Acheté Sandale Sahel (41) - Proposer chemise lin',
-    phone: '+226 76 98 76 54',
-    avatar: 'SK'
-  },
-  {
-    id: 'lead-3',
-    name: 'Aminata Sawadogo',
-    city: 'Karpala, Ouaga',
-    notes: 'Panier en attente (37 500 F) - Confirmation adresse',
-    phone: '+226 55 43 21 00',
-    avatar: 'AS'
-  },
-  {
-    id: 'lead-4',
-    name: 'Moussa Traoré',
-    city: 'Ouaga 2000',
-    notes: 'T-shirt Signature (XL) en attente réappro',
-    phone: '+226 78 22 11 33',
-    avatar: 'MT'
-  },
-  {
-    id: 'lead-5',
-    name: 'Fatou Zongo',
-    city: '1200 Logements, Ouaga',
-    notes: 'Demande conseil pointure 39 pour baskets pastel',
-    phone: '+226 71 44 55 66',
-    avatar: 'FZ'
-  }
-];
+export const INITIAL_LEADS: ClientLead[] = [];
 
 // LocalStorage Persistence helpers
 const STORAGE_KEYS = {

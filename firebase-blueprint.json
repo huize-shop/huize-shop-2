@@ -74,6 +74,7 @@
       "properties": {
         "logoUrl": { "type": "string", "description": "Logo personnalisé de la boutique" },
         "heroImage": { "type": "string", "description": "Photo principale de l'Hero" },
+        "heroImages": { "type": "array", "description": "Liste des photos défilantes de l'Hero (toutes les 5 secondes)" },
         "heroTagline": { "type": "string", "description": "Slogan de l'Hero" },
         "heroTitle": { "type": "string", "description": "Titre principal de l'Hero" },
         "heroSubtitle": { "type": "string", "description": "Sous-titre descriptif de l'Hero" },

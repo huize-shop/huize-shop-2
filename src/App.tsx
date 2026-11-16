@@ -6,26 +6,24 @@ import {
   loadStoredCategories,
   saveStoredCategories,
   loadStoredMediaConfig,
-  saveStoredMediaConfig,
-  INITIAL_ORDERS,
-  INITIAL_LEADS,
-  INITIAL_MEDIA_CONFIG
+  saveStoredMediaConfig
 } from './data/initialData.ts';
 import {
-  subscribeProducts,
+  fetchCatalogFromServer,
+  syncServerCatalog,
+  fetchOrdersOnce,
+  fetchLeadsOnce,
   saveProductToDb,
   deleteProductFromDb,
-  subscribeCategories,
   saveCategoryToDb,
   deleteCategoryFromDb,
-  subscribeOrders,
   saveOrderToDb,
+  deleteOrderFromDb,
   updateOrderStatusInDb,
-  subscribeLeads,
-  subscribeMediaConfig,
+  saveLeadToDb,
+  deleteLeadFromDb,
   saveMediaConfigToDb,
-  incrementProductLikesInDb,
-  testConnection
+  incrementProductLikesInDb
 } from './firebase.ts';
 import { Navbar } from './components/Navbar.tsx';
 import { Hero } from './components/Hero.tsx';
@@ -62,8 +60,8 @@ export default function App() {
   // Products & Categories persistent state
   const [products, setProducts] = useState<Product[]>(loadStoredProducts);
   const [categories, setCategories] = useState<Category[]>(loadStoredCategories);
-  const [orders, setOrders] = useState<WhatsAppOrder[]>(INITIAL_ORDERS);
-  const [leads, setLeads] = useState<ClientLead[]>(INITIAL_LEADS);
+  const [orders, setOrders] = useState<WhatsAppOrder[]>([]);
+  const [leads, setLeads] = useState<ClientLead[]>([]);
   const [mediaConfig, setMediaConfig] = useState<SiteMediaConfig>(loadStoredMediaConfig);
 
   // Cart state
@@ -133,6 +131,10 @@ export default function App() {
     );
 
     incrementProductLikesInDb(productId, isAlreadyLiked ? -1 : 1);
+    syncServerCatalog({
+      likedProductId: productId,
+      likeDelta: isAlreadyLiked ? -1 : 1
+    });
 
     showToast(
       isAlreadyLiked
@@ -141,48 +143,45 @@ export default function App() {
     );
   };
 
-  // Connect and subscribe to Firebase Firestore in real-time
+  // Load shared catalog from server-side cache (0 direct Firestore reads per visitor)
   useEffect(() => {
-    testConnection();
-
-    const unsubProducts = subscribeProducts((data) => {
-      if (data && data.length > 0) {
-        setProducts(data);
+    let cancelled = false;
+    fetchCatalogFromServer().then((cached) => {
+      if (cancelled || !cached) return;
+      if (cached.products && cached.products.length > 0) {
+        setProducts(cached.products);
+      }
+      if (cached.categories && cached.categories.length > 0) {
+        setCategories(cached.categories);
+      }
+      if (cached.mediaConfig) {
+        setMediaConfig(cached.mediaConfig);
       }
     });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-    const unsubCategories = subscribeCategories((data) => {
-      if (data && data.length > 0) {
-        setCategories(data);
+  // Load private admin collections (orders & leads) ONLY when authenticated as admin
+  useEffect(() => {
+    if (!isAdminAuthenticated) return;
+    let cancelled = false;
+
+    Promise.all([fetchOrdersOnce(), fetchLeadsOnce()]).then(([ordersData, leadsData]) => {
+      if (cancelled) return;
+      if (ordersData && ordersData.length > 0) {
+        setOrders(ordersData);
       }
-    });
-
-    const unsubOrders = subscribeOrders((data) => {
-      if (data && data.length > 0) {
-        setOrders(data);
-      }
-    });
-
-    const unsubLeads = subscribeLeads((data) => {
-      if (data && data.length > 0) {
-        setLeads(data);
-      }
-    });
-
-    const unsubMedia = subscribeMediaConfig((config) => {
-      if (config) {
-        setMediaConfig(config);
+      if (leadsData && leadsData.length > 0) {
+        setLeads(leadsData);
       }
     });
 
     return () => {
-      unsubProducts();
-      unsubCategories();
-      unsubOrders();
-      unsubLeads();
-      unsubMedia();
+      cancelled = true;
     };
-  }, []);
+  }, [isAdminAuthenticated]);
 
   // Fallback cache products to localStorage
   useEffect(() => {
@@ -312,12 +311,65 @@ export default function App() {
     };
 
     setOrders((prev) => [newOrder, ...prev]);
+
+    const cleanPhone = orderData.customerPhone.replace(/[^0-9]/g, '');
+    const hasRealIdentity =
+      (orderData.customerName && orderData.customerName !== 'Client WhatsApp') || cleanPhone.length >= 6;
+
+    if (hasRealIdentity) {
+      const words = orderData.customerName.trim().split(/\s+/).filter(Boolean);
+      const avatar =
+        words.length >= 2
+          ? `${words[0][0]}${words[1][0]}`.toUpperCase()
+          : (orderData.customerName.slice(0, 2) || 'CL').toUpperCase();
+
+      const realLead: ClientLead = {
+        id: cleanPhone ? `lead-${cleanPhone}` : `lead-${Date.now()}`,
+        name: orderData.customerName,
+        city: orderData.customerCity,
+        notes: `${orderData.itemsSummary} (${orderData.total.toLocaleString('fr-FR')} F CFA)`,
+        phone: orderData.customerPhone,
+        avatar
+      };
+
+      setLeads((prev) => {
+        const filtered = prev.filter((l) => l.id !== realLead.id);
+        return [realLead, ...filtered];
+      });
+      saveLeadToDb(realLead).catch(() => {});
+    }
+
     try {
       await saveOrderToDb(newOrder);
       showToast('📦 Commande enregistrée et transmise sur WhatsApp !');
     } catch (e) {
       console.error('Failed to log order to Firestore', e);
     }
+  };
+
+  // Register direct product WhatsApp click as a real inquiry/order
+  const handleDirectProductOrder = async (product: Product, size: string, quantity: number) => {
+    const newOrder: WhatsAppOrder = {
+      id: `CMD-${Math.floor(1000 + Math.random() * 9000)}`,
+      customerName: 'Client Direct WhatsApp',
+      phone: 'Non précisé',
+      city: 'Burkina Faso',
+      itemsSummary: `${quantity}x ${product.name} (${size || 'Standard'})`,
+      total: product.price * quantity,
+      date: new Date().toLocaleDateString('fr-FR', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      }),
+      status: 'discussion',
+      statusLabel: 'En discussion',
+      paymentMethod: 'À convenir sur WhatsApp'
+    };
+
+    setOrders((prev) => [newOrder, ...prev]);
+    saveOrderToDb(newOrder).catch(() => {});
   };
 
   // Handle Admin Operations with Firestore Persistence
@@ -329,12 +381,13 @@ export default function App() {
     const updatedList = [created, ...products];
     setProducts(updatedList);
     saveStoredProducts(updatedList);
-    showToast(`✨ Article "${created.name}" publié et enregistré en base !`);
+    syncServerCatalog({ product: created });
+    showToast(`✨ Article "${created.name}" publié et enregistré !`);
     try {
       await saveProductToDb(created);
     } catch (e) {
       console.error('Failed to save product in Firestore', e);
-      showToast('⚠️ Erreur enregistrement base de données');
+      showToast('⚠️ Synchronisé sur le serveur (quota Firestore atteint)');
     }
   };
 
@@ -342,7 +395,8 @@ export default function App() {
     const updatedList = products.map((p) => (p.id === updated.id ? updated : p));
     setProducts(updatedList);
     saveStoredProducts(updatedList);
-    showToast(`Modifications enregistrées en base pour "${updated.name}"`);
+    syncServerCatalog({ product: updated });
+    showToast(`Modifications enregistrées pour "${updated.name}"`);
     try {
       await saveProductToDb(updated);
     } catch (e) {
@@ -354,7 +408,8 @@ export default function App() {
     const updatedList = products.filter((p) => p.id !== id);
     setProducts(updatedList);
     saveStoredProducts(updatedList);
-    showToast('Article supprimé de la base de données');
+    syncServerCatalog({ deletedProductId: id });
+    showToast('Article supprimé du catalogue');
     try {
       await deleteProductFromDb(id);
     } catch (e) {
@@ -373,6 +428,7 @@ export default function App() {
       slug
     };
     setCategories((prev) => [...prev, newCat]);
+    syncServerCatalog({ category: newCat });
     showToast(`Catégorie "${name}" créée`);
     try {
       await saveCategoryToDb(newCat);
@@ -383,6 +439,7 @@ export default function App() {
 
   const handleDeleteCategory = async (id: string) => {
     setCategories((prev) => prev.filter((c) => c.id !== id));
+    syncServerCatalog({ deletedCategoryId: id });
     showToast('Catégorie supprimée');
     try {
       await deleteCategoryFromDb(id);
@@ -411,12 +468,40 @@ export default function App() {
 
   const handleUpdateMediaConfig = async (newConfig: SiteMediaConfig) => {
     setMediaConfig(newConfig);
+    syncServerCatalog({ mediaConfig: newConfig });
     showToast("✨ Photos et bannières d'accueil enregistrées !");
     try {
       await saveMediaConfigToDb(newConfig);
     } catch (e) {
       console.error('Failed to save media config to Firestore', e);
     }
+  };
+
+  const handleDeleteOrder = async (orderId: string) => {
+    setOrders((prev) => prev.filter((o) => o.id !== orderId));
+    showToast('Commande supprimée');
+    try {
+      await deleteOrderFromDb(orderId);
+    } catch (e) {
+      console.error('Failed to delete order from Firestore', e);
+    }
+  };
+
+  const handleDeleteLead = async (leadId: string) => {
+    setLeads((prev) => prev.filter((l) => l.id !== leadId));
+    showToast('Contact client supprimé');
+    try {
+      await deleteLeadFromDb(leadId);
+    } catch (e) {
+      console.error('Failed to delete lead from Firestore', e);
+    }
+  };
+
+  const handleRefreshAdminData = async () => {
+    const [ordersData, leadsData] = await Promise.all([fetchOrdersOnce(), fetchLeadsOnce()]);
+    if (ordersData) setOrders(ordersData);
+    if (leadsData) setLeads(leadsData);
+    showToast('Données actualisées');
   };
 
   // Synchronize Tab changes
@@ -551,6 +636,9 @@ export default function App() {
         onAddCategory={handleAddCategory}
         onDeleteCategory={handleDeleteCategory}
         onUpdateOrderStatus={handleUpdateOrderStatus}
+        onDeleteOrder={handleDeleteOrder}
+        onDeleteLead={handleDeleteLead}
+        onRefreshAdminData={handleRefreshAdminData}
         onExitAdmin={() => {
           setIsAdminMode(false);
           setActiveTab('accueil');
@@ -615,6 +703,7 @@ export default function App() {
           <>
             <Hero
               heroImage={mediaConfig.heroImage}
+              heroImages={mediaConfig.heroImages}
               heroTagline={mediaConfig.heroTagline}
               heroTitle={mediaConfig.heroTitle}
               heroSubtitle={mediaConfig.heroSubtitle}
@@ -626,12 +715,8 @@ export default function App() {
             />
 
             <AdCarousel
-              slides={mediaConfig.carouselSlides}
-              onSelectCategory={(cat) => {
-                setActiveTab('boutique');
-                setShopCategoryFilter(cat);
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-              }}
+              products={products}
+              onOpenProduct={(product) => setModalProduct(product)}
             />
 
             <CategoryShowcase
@@ -935,6 +1020,7 @@ export default function App() {
         isLiked={modalProduct ? likedProductIds.includes(modalProduct.id) : false}
         onToggleLike={handleToggleLike}
         onOpenShare={(p) => setShareModalProduct(p)}
+        onDirectWhatsAppOrder={handleDirectProductOrder}
       />
 
       {/* Product Share Modal */}

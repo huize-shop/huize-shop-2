@@ -79,6 +79,21 @@ export default defineConfig(() => {
                 },
               },
             },
+            {
+              urlPattern: /\/api\/catalog$/i,
+              handler: 'NetworkFirst',
+              options: {
+                cacheName: 'huize-catalog-api-cache',
+                networkTimeoutSeconds: 4,
+                expiration: {
+                  maxEntries: 2,
+                  maxAgeSeconds: 60 * 60 * 24,
+                },
+                cacheableResponse: {
+                  statuses: [200],
+                },
+              },
+            },
           ],
         },
         devOptions: {
