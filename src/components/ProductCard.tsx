@@ -10,6 +10,13 @@ interface ProductCardProps {
   isLiked?: boolean;
   onToggleLike?: (productId: string) => void;
   onOpenShare?: (product: Product) => void;
+  referralCode?: string;
+  onDirectWhatsAppOrder?: (
+    product: Product,
+    size: string,
+    quantity: number,
+    referralCode?: string
+  ) => void;
 }
 
 export const ProductCard: React.FC<ProductCardProps> = ({
@@ -18,7 +25,9 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   onQuickAdd,
   isLiked = false,
   onToggleLike,
-  onOpenShare
+  onOpenShare,
+  referralCode,
+  onDirectWhatsAppOrder
 }) => {
   const isOutOfStock = product.stock <= 0;
   const isLowStock = product.stock > 0 && product.stock <= 3;
@@ -161,11 +170,12 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           </button>
         ) : (
           <a
-            href={getProductWhatsAppUrl(product, product.sizes?.[0] || '', 1)}
+            href={getProductWhatsAppUrl(product, product.sizes?.[0] || '', 1, referralCode)}
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => {
               e.stopPropagation();
+              onDirectWhatsAppOrder?.(product, product.sizes?.[0] || '', 1, referralCode);
             }}
             title="Commander directement en 1 clic sur WhatsApp (+226 53 74 27 48)"
             className="w-full inline-flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg bg-[#25D366] hover:bg-[#20ba5a] text-white text-xs font-bold shadow-xs transition-all active:scale-95 cursor-pointer"

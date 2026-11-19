@@ -7,7 +7,11 @@ import {
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
-import { HERO_IMAGE } from '../data/initialData.ts';
+import {
+  HERO_IMAGE,
+  HERO_PROMO_DELIVERY_IMG,
+  HERO_PROMO_COD_IMG
+} from '../data/initialData.ts';
 import { getDirectWhatsAppUrl } from '../utils/whatsapp.ts';
 
 interface HeroProps {
@@ -137,18 +141,18 @@ export const Hero: React.FC<HeroProps> = ({
             </div>
 
             {/* Quick trust points */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-4 border-t border-white/10 w-full text-xs text-white/80">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-4 border-t border-white/10 w-full text-xs text-white/85">
               <div className="flex items-center gap-1.5">
                 <CheckCircle2 className="w-4 h-4 text-[#D8F36A] shrink-0" />
-                <span>Prix réels en F CFA</span>
+                <span>Livraison gratuite à Ouaga</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <CheckCircle2 className="w-4 h-4 text-[#D8F36A] shrink-0" />
-                <span>Livraison Ouaga &amp; Province</span>
+                <span>Paiement après livraison</span>
               </div>
               <div className="flex items-center gap-1.5 col-span-2 sm:col-span-1">
                 <CheckCircle2 className="w-4 h-4 text-[#D8F36A] shrink-0" />
-                <span>Orange &amp; Moov Money</span>
+                <span>100% Fiable · Zéro arnaque</span>
               </div>
             </div>
           </div>
@@ -217,18 +221,29 @@ export const Hero: React.FC<HeroProps> = ({
                 </>
               )}
 
-              <div className="absolute bottom-4 left-4 right-4 z-20 bg-white/95 backdrop-blur-md p-3.5 rounded-xl border border-white/30 text-[#123B2A] flex items-center justify-between">
-                <div>
-                  <p className="text-[11px] uppercase tracking-wider font-extrabold text-[#1F5A40]">Collection Urbaine</p>
-                  <p className="text-sm font-bold font-title">Sneakers &amp; Mode Ouaga 2025</p>
-                </div>
-                <button
-                  onClick={onExploreShop}
-                  className="px-3 py-1.5 bg-[#123B2A] text-[#D8F36A] rounded-lg text-xs font-bold hover:bg-[#1F5A40] transition-colors cursor-pointer"
-                >
-                  Voir
-                </button>
-              </div>
+              {(() => {
+                const activeSrc = imagesList[safeIdx] || '';
+                const isPromoPoster =
+                  activeSrc.includes(HERO_PROMO_DELIVERY_IMG) ||
+                  activeSrc.includes(HERO_PROMO_COD_IMG);
+                if (isPromoPoster) return null;
+                return (
+                  <div className="absolute bottom-4 left-4 right-4 z-20 bg-white/95 backdrop-blur-md p-3.5 rounded-xl border border-white/30 text-[#123B2A] flex items-center justify-between">
+                    <div>
+                      <p className="text-[11px] uppercase tracking-wider font-extrabold text-[#1F5A40]">
+                        Collection Urbaine
+                      </p>
+                      <p className="text-sm font-bold font-title">Sneakers &amp; Mode Ouaga 2025</p>
+                    </div>
+                    <button
+                      onClick={onExploreShop}
+                      className="px-3 py-1.5 bg-[#123B2A] text-[#D8F36A] rounded-lg text-xs font-bold hover:bg-[#1F5A40] transition-colors cursor-pointer"
+                    >
+                      Voir
+                    </button>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>

@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Product } from '../types.ts';
 import {
   formatFCFA,
   getProductPublicImageUrl,
-  getProductShareUrl
+  getProductShareUrl,
+  getProductWhatsAppShareUrl,
+  shareProductWithPhotoAndLink,
+  normalizeReferralCode
 } from '../utils/whatsapp.ts';
 import { X, MessageCircle, Copy, Check, Share2, Globe, Download } from 'lucide-react';
 
@@ -12,90 +15,72 @@ interface ShareModalProps {
   isOpen: boolean;
   onClose: () => void;
   onShowToast: (msg: string) => void;
+  referralCode?: string;
+  onChangeReferralCode?: (code: string) => void;
 }
 
 export const ShareModal: React.FC<ShareModalProps> = ({
   product,
   isOpen,
   onClose,
-  onShowToast
+  onShowToast,
+  referralCode = '',
+  onChangeReferralCode
 }) => {
   const [copied, setCopied] = useState<boolean>(false);
   const [isPreparingImageShare, setIsPreparingImageShare] = useState<boolean>(false);
+  const [customCode, setCustomCode] = useState<string>(() => normalizeReferralCode(referralCode));
+
+  useEffect(() => {
+    if (isOpen) {
+      setCustomCode(normalizeReferralCode(referralCode));
+      setCopied(false);
+    }
+  }, [isOpen, referralCode, product?.id]);
 
   if (!isOpen || !product) return null;
 
-  const shareUrl = getProductShareUrl(product.id);
+  const activeRef = normalizeReferralCode(customCode);
+  const shareUrl = getProductShareUrl(product.id, activeRef || undefined);
   const publicImageUrl = getProductPublicImageUrl(product);
   const previewSrc = product.images[0] || publicImageUrl;
-  const shareText = `Découvre cet article sur HUIZE SHOP : ${product.name} à seulement ${formatFCFA(product.price)} ! Livraison rapide au Burkina Faso 🇧🇫`;
+  const supportsNativeShare =
+    typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+
+  // Single-URL WhatsApp share (no extra image link so WhatsApp displays the rich photo card automatically)
+  const whatsappShareUrl = getProductWhatsAppShareUrl(product, activeRef || undefined);
+  const facebookShareUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`;
 
   const handleCopyLink = async () => {
     try {
       await navigator.clipboard.writeText(shareUrl);
       setCopied(true);
-      onShowToast('✨ Lien du produit copié dans le presse-papier !');
+      onShowToast('Lien du produit copié dans le presse-papier !');
       setTimeout(() => setCopied(false), 2500);
     } catch {
       onShowToast('Impossible de copier automatiquement le lien.');
     }
   };
 
-  const handleNativeShare = async () => {
-    if (!navigator.share) {
-      handleCopyLink();
-      return;
-    }
-
+  const handleNativePhotoShare = async () => {
     setIsPreparingImageShare(true);
     try {
-      // Try attaching the actual product photo file when supported by the phone/browser
-      let imageFile: File | null = null;
-      try {
-        const res = await fetch(publicImageUrl);
-        if (res.ok) {
-          const blob = await res.blob();
-          const ext = blob.type.includes('png') ? 'png' : blob.type.includes('webp') ? 'webp' : 'jpg';
-          const safeFileName = `${(product.ref || product.id).replace(/[^a-zA-Z0-9_-]/g, '')}.${ext}`;
-          imageFile = new File([blob], safeFileName, { type: blob.type || 'image/jpeg' });
-        }
-      } catch {
-        // Fallback to URL-only native share if image fetch fails
-      }
-
-      if (
-        imageFile &&
-        typeof navigator.canShare === 'function' &&
-        navigator.canShare({ files: [imageFile] })
-      ) {
-        await navigator.share({
-          files: [imageFile],
-          title: `HUIZE SHOP - ${product.name}`,
-          text: `${shareText}\n\n👉 Voir et commander : ${shareUrl}`,
-        });
-      } else {
-        await navigator.share({
-          title: `HUIZE SHOP - ${product.name}`,
-          text: shareText,
-          url: shareUrl
-        });
-      }
-
-      onShowToast('Merci d\'avoir partagé !');
-      onClose();
-    } catch (err: any) {
-      if (err?.name !== 'AbortError') {
-        handleCopyLink();
+      const outcome = await shareProductWithPhotoAndLink(product, activeRef || undefined);
+      if (outcome === 'shared-with-file') {
+        onShowToast('Photo et lien partagés ensemble !');
+        onClose();
+      } else if (outcome === 'shared-link') {
+        onShowToast('Produit partagé !');
+        onClose();
+      } else if (outcome === 'unsupported') {
+        window.open(whatsappShareUrl, '_blank', 'noopener,noreferrer');
+        onShowToast('Ouverture de WhatsApp...');
+        setTimeout(onClose, 600);
       }
     } finally {
       setIsPreparingImageShare(false);
     }
   };
-
-  const whatsappShareUrl = `https://wa.me/?text=${encodeURIComponent(
-    `${shareText}\n\n👉 Voir et commander :\n${shareUrl}\n\n🖼️ Photo du produit :\n${publicImageUrl}`
-  )}`;
-  const facebookShareUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`;
 
   return (
     <div
@@ -127,7 +112,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
               Partager ce produit
             </h3>
             <p className="text-xs text-[#6B726C]">
-              Aperçu avec photo inclus sur WhatsApp, Facebook et mobile
+              La photo s&apos;affiche en même temps que le lien du produit
             </p>
           </div>
         </div>
@@ -156,7 +141,29 @@ export const ShareModal: React.FC<ShareModalProps> = ({
 
         {/* Share Action Buttons */}
         <div className="flex flex-col gap-2.5">
-          {/* WhatsApp Share Button */}
+          {/* Primary Smart Share: attaches real photo file + product link on mobile, or clean WhatsApp OG card */}
+          {supportsNativeShare ? (
+            <button
+              type="button"
+              disabled={isPreparingImageShare}
+              onClick={handleNativePhotoShare}
+              className="w-full flex items-center justify-between p-3 rounded-xl bg-[#25D366] hover:bg-[#20ba5a] disabled:opacity-70 text-white font-bold text-xs sm:text-sm shadow-xs transition-all active:scale-98 cursor-pointer"
+            >
+              <div className="flex items-center gap-2.5">
+                <MessageCircle className="w-5 h-5 fill-white text-[#25D366]" />
+                <span>
+                  {isPreparingImageShare
+                    ? 'Préparation de la photo...'
+                    : 'Partager Photo + Lien (WhatsApp)'}
+                </span>
+              </div>
+              <span className="text-[11px] bg-white/20 px-2 py-0.5 rounded-full font-semibold">
+                Recommandé
+              </span>
+            </button>
+          ) : null}
+
+          {/* Direct WhatsApp single-link share (auto-renders OG photo preview without image URL clutter) */}
           <a
             href={whatsappShareUrl}
             target="_blank"
@@ -165,15 +172,20 @@ export const ShareModal: React.FC<ShareModalProps> = ({
               onShowToast('Ouverture de WhatsApp...');
               setTimeout(onClose, 800);
             }}
-            className="w-full flex items-center justify-between p-3 rounded-xl bg-[#25D366] hover:bg-[#20ba5a] text-white font-bold text-xs sm:text-sm shadow-xs transition-all active:scale-98 cursor-pointer"
+            className={`w-full flex items-center justify-between p-3 rounded-xl font-bold text-xs sm:text-sm shadow-xs transition-all active:scale-98 cursor-pointer ${
+              supportsNativeShare
+                ? 'bg-[#123B2A] hover:bg-[#1F5A40] text-white'
+                : 'bg-[#25D366] hover:bg-[#20ba5a] text-white'
+            }`}
           >
             <div className="flex items-center gap-2.5">
-              <MessageCircle className="w-5 h-5 fill-white text-[#25D366]" />
-              <span>Partager sur WhatsApp (Ami ou Statut)</span>
+              <MessageCircle className="w-5 h-5 fill-current" />
+              <span>
+                {supportsNativeShare
+                  ? 'WhatsApp direct (Lien avec aperçu photo)'
+                  : 'Partager sur WhatsApp (Aperçu photo inclus)'}
+              </span>
             </div>
-            <span className="text-[11px] bg-white/20 px-2 py-0.5 rounded-full font-semibold">
-              Recommandé
-            </span>
           </a>
 
           {/* Facebook Share Button */}
@@ -191,23 +203,6 @@ export const ShareModal: React.FC<ShareModalProps> = ({
             <span>Partager sur Facebook</span>
           </a>
 
-          {/* Native System Share (Mobile — attaches actual image file!) */}
-          {typeof navigator !== 'undefined' && typeof navigator.share === 'function' && (
-            <button
-              type="button"
-              disabled={isPreparingImageShare}
-              onClick={handleNativeShare}
-              className="w-full flex items-center justify-center gap-2 p-3 rounded-xl bg-[#123B2A] hover:bg-[#1F5A40] disabled:opacity-70 text-white font-bold text-xs sm:text-sm shadow-xs transition-all active:scale-98 cursor-pointer"
-            >
-              <Share2 className="w-4 h-4" />
-              <span>
-                {isPreparingImageShare
-                  ? 'Préparation de la photo...'
-                  : 'Partager avec la photo (Téléphone)'}
-              </span>
-            </button>
-          )}
-
           {/* Direct Image Download for Status / Manual Posting */}
           <a
             href={publicImageUrl}
@@ -215,13 +210,44 @@ export const ShareModal: React.FC<ShareModalProps> = ({
             className="w-full flex items-center justify-center gap-2 p-2.5 rounded-xl bg-[#FAF9F5] hover:bg-[#EFEFE6] text-[#123B2A] font-semibold text-xs border border-[#E1E3DA] transition-colors"
           >
             <Download className="w-3.5 h-3.5 text-[#1F5A40]" />
-            <span>Télécharger la photo du produit</span>
+            <span>Télécharger la photo</span>
           </a>
 
-          {/* Copy Direct Link */}
+          {/* Team Code Selector (for direct storefront sharing) */}
           <div className="pt-2 border-t border-[#E1E3DA] mt-1">
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[11px] font-bold text-[#123B2A] uppercase tracking-wider">
+                Code équipe (optionnel) :
+              </label>
+              {customCode && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomCode('');
+                    onChangeReferralCode?.('');
+                  }}
+                  className="text-[11px] font-semibold text-[#6B726C] hover:text-[#123B2A] cursor-pointer"
+                >
+                  Effacer
+                </button>
+              )}
+            </div>
+            <input
+              type="text"
+              value={customCode}
+              onChange={(e) => {
+                const upper = e.target.value.toUpperCase();
+                setCustomCode(upper);
+                onChangeReferralCode?.(normalizeReferralCode(upper));
+              }}
+              placeholder="Ex : MOUSA — pour créditer vos clics & commandes"
+              className="w-full bg-[#FAF9F5] border border-[#E1E3DA] rounded-lg px-3 py-2 text-xs uppercase font-mono text-[#123B2A] focus:outline-[#1F5A40] mb-3"
+            />
+
             <label className="text-[11px] font-bold text-[#6B726C] uppercase tracking-wider block mb-1.5">
-              Lien direct vers ce produit :
+              {activeRef
+                ? `Lien direct avec votre code (${activeRef}) :`
+                : 'Lien direct vers ce produit :'}
             </label>
             <div className="flex items-center gap-2">
               <input

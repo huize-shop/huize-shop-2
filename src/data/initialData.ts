@@ -1,6 +1,8 @@
 import { Category, ClientLead, Product, WhatsAppOrder, SiteMediaConfig, CarouselSlide } from '../types.ts';
 
 export const HERO_IMAGE = '/src/assets/images/hero_fashion_burkina_1794167660891.jpg';
+export const HERO_PROMO_DELIVERY_IMG = '/src/assets/images/hero_promo_livraison_gratuite_1795021552417.jpg';
+export const HERO_PROMO_COD_IMG = '/src/assets/images/hero_promo_paiement_livraison_1795021553278.jpg';
 export const VELOCITY_SNEAKER_IMG = '/src/assets/images/product_velocity_sneakers_1794167661807.jpg';
 export const SAHEL_SANDAL_IMG = '/src/assets/images/product_sahel_leather_sandals_1794167662030.jpg';
 export const STREET_TSHIRT_IMG = '/src/assets/images/product_streetwear_tshirt_1794167662293.jpg';
@@ -157,6 +159,8 @@ export const INITIAL_CATEGORIES: Category[] = [
     name: 'Baskets',
     icon: '👟',
     badge: 'TOP',
+    subtitle: 'Sneakers & Street',
+    image: VELOCITY_SNEAKER_IMG,
     itemCount: 4,
     slug: 'chaussures'
   },
@@ -165,6 +169,8 @@ export const INITIAL_CATEGORIES: Category[] = [
     name: 'Sandales',
     icon: '👡',
     badge: 'CUIR',
+    subtitle: 'Artisanal & Sahel',
+    image: SAHEL_SANDAL_IMG,
     itemCount: 2,
     slug: 'sandales'
   },
@@ -173,6 +179,8 @@ export const INITIAL_CATEGORIES: Category[] = [
     name: 'Vêtements',
     icon: '👕',
     badge: 'MODE',
+    subtitle: 'T-Shirts & Chemises',
+    image: STREET_TSHIRT_IMG,
     itemCount: 2,
     slug: 'vetements'
   }
@@ -182,40 +190,100 @@ export const INITIAL_ORDERS: WhatsAppOrder[] = [];
 
 export const INITIAL_LEADS: ClientLead[] = [];
 
-// LocalStorage Persistence helpers
+// LocalStorage Persistence helpers (compact v2 keys so 4MB+ base64 never overflows 5MB browser quota)
 const STORAGE_KEYS = {
-  PRODUCTS: 'huize_shop_products_v1',
-  CATEGORIES: 'huize_shop_categories_v1',
+  PRODUCTS: 'huize_shop_products_v2',
+  CATEGORIES: 'huize_shop_categories_v2',
   CART: 'huize_shop_cart_v1',
   ORDERS: 'huize_shop_orders_v1'
 };
 
-export function loadStoredProducts(): Product[] {
+export const MEDIA_STORAGE_KEY = 'huize_shop_media_config_v2';
+
+function cleanupLegacyStorageOnce() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
-    if (raw) return JSON.parse(raw);
-  } catch (e) {
-    console.error('Failed to load products from storage', e);
+    localStorage.removeItem('huize_shop_products_v1');
+    localStorage.removeItem('huize_shop_categories_v1');
+    localStorage.removeItem('huize_shop_media_config_v1');
+  } catch {
+    // Ignore storage cleanup errors
   }
-  return INITIAL_PRODUCTS;
+}
+
+export interface BootstrapCatalogState {
+  products: Product[];
+  categories: Category[];
+  mediaConfig: SiteMediaConfig;
+  ready: boolean;
+}
+
+export function getBootstrapCatalog(): BootstrapCatalogState {
+  cleanupLegacyStorageOnce();
+
+  // 1. Server-injected live snapshot in <head> (0ms, always up-to-date)
+  if (typeof window !== 'undefined' && window.__HUIZE_INITIAL_CATALOG__) {
+    const boot = window.__HUIZE_INITIAL_CATALOG__;
+    if (Array.isArray(boot.products) && Array.isArray(boot.categories) && boot.mediaConfig) {
+      saveStoredProducts(boot.products);
+      saveStoredCategories(boot.categories);
+      saveStoredMediaConfig(boot.mediaConfig);
+      return {
+        products: boot.products,
+        categories: boot.categories,
+        mediaConfig: boot.mediaConfig,
+        ready: true
+      };
+    }
+  }
+
+  // 2. Previously synced v2 localStorage cache
+  try {
+    const rawProds = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
+    const rawCats = localStorage.getItem(STORAGE_KEYS.CATEGORIES);
+    const rawMedia = localStorage.getItem(MEDIA_STORAGE_KEY);
+    if (rawProds && rawCats && rawMedia) {
+      const parsedProds = JSON.parse(rawProds);
+      const parsedCats = JSON.parse(rawCats);
+      const parsedMedia = JSON.parse(rawMedia);
+      if (Array.isArray(parsedProds) && parsedProds.length > 0 && Array.isArray(parsedCats) && parsedMedia) {
+        return {
+          products: parsedProds,
+          categories: parsedCats,
+          mediaConfig: parsedMedia,
+          ready: true
+        };
+      }
+    }
+  } catch (e) {
+    console.error('Failed to load v2 catalog cache', e);
+  }
+
+  // 3. Cold start without HTML bootstrap: keep empty until /api/catalog (~15 KB) responds (avoid flashing old demo products)
+  return {
+    products: [],
+    categories: INITIAL_CATEGORIES,
+    mediaConfig: INITIAL_MEDIA_CONFIG,
+    ready: false
+  };
+}
+
+export function loadStoredProducts(): Product[] {
+  return getBootstrapCatalog().products;
 }
 
 export function saveStoredProducts(products: Product[]): void {
   try {
-    localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
+    const serialized = JSON.stringify(products);
+    if (serialized.length <= 1_500_000) {
+      localStorage.setItem(STORAGE_KEYS.PRODUCTS, serialized);
+    }
   } catch (e) {
     console.error('Failed to save products to storage', e);
   }
 }
 
 export function loadStoredCategories(): Category[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.CATEGORIES);
-    if (raw) return JSON.parse(raw);
-  } catch (e) {
-    console.error('Failed to load categories', e);
-  }
-  return INITIAL_CATEGORIES;
+  return getBootstrapCatalog().categories;
 }
 
 export function saveStoredCategories(categories: Category[]): void {
@@ -258,6 +326,7 @@ export const INITIAL_CAROUSEL_SLIDES: CarouselSlide[] = [
 
 export const INITIAL_MEDIA_CONFIG: SiteMediaConfig = {
   heroImage: HERO_IMAGE,
+  heroImages: [HERO_IMAGE, HERO_PROMO_DELIVERY_IMG, HERO_PROMO_COD_IMG],
   heroTagline: 'Ton style, ta signature',
   heroTitle: 'Affirme ton style avec HUIZE SHOP',
   heroSubtitle:
@@ -265,21 +334,16 @@ export const INITIAL_MEDIA_CONFIG: SiteMediaConfig = {
   carouselSlides: INITIAL_CAROUSEL_SLIDES
 };
 
-export const MEDIA_STORAGE_KEY = 'huize_shop_media_config_v1';
-
 export function loadStoredMediaConfig(): SiteMediaConfig {
-  try {
-    const raw = localStorage.getItem(MEDIA_STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch (e) {
-    console.error('Failed to load media config from storage', e);
-  }
-  return INITIAL_MEDIA_CONFIG;
+  return getBootstrapCatalog().mediaConfig;
 }
 
 export function saveStoredMediaConfig(config: SiteMediaConfig): void {
   try {
-    localStorage.setItem(MEDIA_STORAGE_KEY, JSON.stringify(config));
+    const serialized = JSON.stringify(config);
+    if (serialized.length <= 1_000_000) {
+      localStorage.setItem(MEDIA_STORAGE_KEY, serialized);
+    }
   } catch (e) {
     console.error('Failed to save media config to storage', e);
   }

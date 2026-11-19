@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Product } from '../types.ts';
-import { formatFCFA, getProductWhatsAppUrl } from '../utils/whatsapp.ts';
-import { X, MessageCircle, ShoppingBag, Check, ShieldCheck, MapPin, Heart, Share2 } from 'lucide-react';
+import { formatFCFA, getProductWhatsAppUrl, normalizeReferralCode } from '../utils/whatsapp.ts';
+import { X, MessageCircle, MessageSquare, ShoppingBag, Check, ShieldCheck, MapPin, Heart, Share2 } from 'lucide-react';
 
 interface ProductDetailModalProps {
   product: Product | null;
@@ -10,7 +10,19 @@ interface ProductDetailModalProps {
   isLiked?: boolean;
   onToggleLike?: (productId: string) => void;
   onOpenShare?: (product: Product) => void;
-  onDirectWhatsAppOrder?: (product: Product, size: string, quantity: number) => void;
+  initialReferralCode?: string;
+  onDirectWhatsAppOrder?: (
+    product: Product,
+    size: string,
+    quantity: number,
+    referralCode?: string
+  ) => void;
+  onStartSiteOrder?: (
+    product: Product,
+    size: string,
+    quantity: number,
+    referralCode?: string
+  ) => void;
 }
 
 export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
@@ -20,12 +32,15 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   isLiked = false,
   onToggleLike,
   onOpenShare,
-  onDirectWhatsAppOrder
+  initialReferralCode = '',
+  onDirectWhatsAppOrder,
+  onStartSiteOrder
 }) => {
   const [selectedSize, setSelectedSize] = useState<string>('');
   const [quantity, setQuantity] = useState<number>(1);
   const [activeImageIdx, setActiveImageIdx] = useState<number>(0);
   const [addedToast, setAddedToast] = useState<boolean>(false);
+  const [advisorCode, setAdvisorCode] = useState<string>(() => normalizeReferralCode(initialReferralCode));
 
   useEffect(() => {
     if (product) {
@@ -33,6 +48,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
       setQuantity(1);
       setActiveImageIdx(0);
       setAddedToast(false);
+      setAdvisorCode(normalizeReferralCode(initialReferralCode));
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = '';
@@ -40,7 +56,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
     return () => {
       document.body.style.overflow = '';
     };
-  }, [product]);
+  }, [product, initialReferralCode]);
 
   if (!product) return null;
 
@@ -239,19 +255,64 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   Total : <strong className="text-[#123B2A]">{formatFCFA(product.price * quantity)}</strong>
                 </span>
               </div>
+
+              {/* Optional advisor / team code (for offline / word-of-mouth referrals) */}
+              <div className="mb-2">
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-[#6B726C] mb-1">
+                  Code conseiller / équipe (optionnel)
+                </label>
+                <input
+                  type="text"
+                  value={advisorCode}
+                  onChange={(e) => setAdvisorCode(e.target.value.toUpperCase())}
+                  placeholder="Ex : MOUSA"
+                  className="w-full p-2 rounded-lg border border-[#E1E3DA] bg-[#FAF9F5] text-xs uppercase font-mono text-[#123B2A] focus:outline-[#1F5A40]"
+                />
+              </div>
             </div>
 
             {/* Action Buttons */}
             <div className="flex flex-col gap-2 pt-2">
+              {onStartSiteOrder && !isOutOfStock && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onStartSiteOrder(
+                      product,
+                      selectedSize,
+                      quantity,
+                      normalizeReferralCode(advisorCode) || undefined
+                    );
+                  }}
+                  className="w-full inline-flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-[#123B2A] hover:bg-[#1F5A40] text-white font-bold text-sm shadow-md transition-all active:scale-98 cursor-pointer"
+                >
+                  <MessageSquare className="w-4 h-4 text-[#D8F36A]" />
+                  <span>Commander &amp; Discuter sur le site</span>
+                </button>
+              )}
+
               <a
-                href={getProductWhatsAppUrl(product, selectedSize, quantity)}
+                href={getProductWhatsAppUrl(
+                  product,
+                  selectedSize,
+                  quantity,
+                  normalizeReferralCode(advisorCode) || undefined
+                )}
                 target="_blank"
                 rel="noopener noreferrer"
-                onClick={() => onDirectWhatsAppOrder?.(product, selectedSize, quantity)}
+                onClick={() =>
+                  onDirectWhatsAppOrder?.(
+                    product,
+                    selectedSize,
+                    quantity,
+                    normalizeReferralCode(advisorCode) || undefined
+                  )
+                }
                 className="w-full inline-flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-[#25D366] hover:bg-[#20ba5a] text-white font-bold text-sm shadow-md transition-all active:scale-98"
               >
                 <MessageCircle className="w-5 h-5 fill-white text-[#25D366]" />
-                <span>💬 Commander direct sur WhatsApp</span>
+                <span>Commander direct sur WhatsApp</span>
               </a>
 
               <button

@@ -1,17 +1,24 @@
 import React from 'react';
 import { MessageCircle } from 'lucide-react';
+import { Category } from '../types.ts';
 import { WHATSAPP_DISPLAY, getDirectWhatsAppUrl } from '../utils/whatsapp.ts';
 import { PWAInstallButton } from './PWAInstallButton.tsx';
 
 interface FooterProps {
   onNavigate: (tab: string) => void;
+  categories?: Category[];
   logoUrl?: string;
   onOpenAdminAuth?: () => void;
   isAdminMode?: boolean;
   setIsAdminMode?: (admin: boolean) => void;
 }
 
-export const Footer: React.FC<FooterProps> = ({ onNavigate, logoUrl, onOpenAdminAuth }) => {
+export const Footer: React.FC<FooterProps> = ({
+  onNavigate,
+  categories = [],
+  logoUrl,
+  onOpenAdminAuth
+}) => {
   return (
     <footer className="bg-[#123B2A] text-white/90 border-t border-[#1F5A40]">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-12 lg:py-16">
@@ -38,7 +45,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, logoUrl, onOpenAdmin
               Ton style, ta signature.
             </p>
             <p className="text-xs sm:text-sm text-white/75 leading-relaxed max-w-sm mt-1">
-              Boutique en ligne de baskets, sandales et vêtements de qualité au Burkina Faso.
+              Boutique en ligne de baskets, sandales, vêtements et accessoires de qualité au Burkina Faso.
               Articles vérifiés, essayage possible et finalisation personnalisée sur WhatsApp.
             </p>
             <div className="mt-2 flex flex-wrap items-center gap-2.5">
@@ -74,30 +81,27 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, logoUrl, onOpenAdmin
               Catégories
             </h3>
             <ul className="space-y-1.5">
-              <li>
-                <button
-                  onClick={() => onNavigate('baskets')}
-                  className="hover:text-[#D8F36A] transition-colors cursor-pointer"
-                >
-                  Baskets &amp; Sneakers
-                </button>
-              </li>
-              <li>
-                <button
-                  onClick={() => onNavigate('sandales')}
-                  className="hover:text-[#D8F36A] transition-colors cursor-pointer"
-                >
-                  Sandales &amp; Mules
-                </button>
-              </li>
-              <li>
-                <button
-                  onClick={() => onNavigate('vetements')}
-                  className="hover:text-[#D8F36A] transition-colors cursor-pointer"
-                >
-                  Vêtements &amp; T-shirts
-                </button>
-              </li>
+              {categories.length > 0 ? (
+                categories.map((cat) => (
+                  <li key={cat.id}>
+                    <button
+                      onClick={() => onNavigate(`cat:${cat.slug}`)}
+                      className="hover:text-[#D8F36A] transition-colors cursor-pointer text-left"
+                    >
+                      {cat.name}
+                    </button>
+                  </li>
+                ))
+              ) : (
+                <li>
+                  <button
+                    onClick={() => onNavigate('boutique')}
+                    className="hover:text-[#D8F36A] transition-colors cursor-pointer text-left"
+                  >
+                    Toute la boutique
+                  </button>
+                </li>
+              )}
             </ul>
           </div>
 
@@ -145,6 +149,14 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, logoUrl, onOpenAdmin
                   className="hover:text-[#D8F36A] transition-colors cursor-pointer"
                 >
                   Mon panier
+                </button>
+              </li>
+              <li>
+                <button
+                  onClick={() => onNavigate('equipe')}
+                  className="hover:text-[#D8F36A] transition-colors cursor-pointer"
+                >
+                  Espace Équipe
                 </button>
               </li>
             </ul>

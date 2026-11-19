@@ -1,11 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { Product, CartItem, Category, WhatsAppOrder, ClientLead, SiteMediaConfig } from './types.ts';
 import {
-  loadStoredProducts,
+  Product,
+  CartItem,
+  Category,
+  WhatsAppOrder,
+  ClientLead,
+  SiteMediaConfig,
+  TeamMember,
+  OrderItemSnapshot
+} from './types.ts';
+import {
+  getBootstrapCatalog,
+  INITIAL_PRODUCTS,
   saveStoredProducts,
-  loadStoredCategories,
   saveStoredCategories,
-  loadStoredMediaConfig,
   saveStoredMediaConfig
 } from './data/initialData.ts';
 import {
@@ -13,6 +21,7 @@ import {
   syncServerCatalog,
   fetchOrdersOnce,
   fetchLeadsOnce,
+  fetchTeamMembersOnce,
   saveProductToDb,
   deleteProductFromDb,
   saveCategoryToDb,
@@ -20,10 +29,17 @@ import {
   saveOrderToDb,
   deleteOrderFromDb,
   updateOrderStatusInDb,
+  updateOrderReferralInDb,
   saveLeadToDb,
   deleteLeadFromDb,
+  saveTeamMemberToDb,
+  deleteTeamMemberFromDb,
+  trackTeamClickOnServer,
+  syncTeamServerCache,
   saveMediaConfigToDb,
-  incrementProductLikesInDb
+  incrementProductLikesInDb,
+  trackStoreVisitOnServer,
+  trackOrderEventOnServer
 } from './firebase.ts';
 import { Navbar } from './components/Navbar.tsx';
 import { Hero } from './components/Hero.tsx';
@@ -35,14 +51,26 @@ import { ShareModal } from './components/ShareModal.tsx';
 import { CartView } from './components/CartView.tsx';
 import { ContactView } from './components/ContactView.tsx';
 import { AboutView } from './components/AboutView.tsx';
+import { TeamPortalView, TeamPortalSession } from './components/TeamPortalView.tsx';
 import { AdminDashboard } from './components/AdminDashboard.tsx';
 import { AdminAuthModal } from './components/AdminAuthModal.tsx';
+import { OrderChatWidget, OrderDraftContext } from './components/OrderChatWidget.tsx';
+import { getStoredTokenForOrder } from './utils/chatClient.ts';
 import { Reassurance } from './components/Reassurance.tsx';
 import { PaymentDelivery } from './components/PaymentDelivery.tsx';
+import { CustomerReviewsSection } from './components/CustomerReviewsSection.tsx';
 import { Footer } from './components/Footer.tsx';
 import { OfflineIndicator } from './components/OfflineIndicator.tsx';
-import { Search, SlidersHorizontal, ArrowRight, Check, Heart } from 'lucide-react';
-import { WHATSAPP_DISPLAY } from './utils/whatsapp.ts';
+import { Search, ArrowRight, Check, Heart, X } from 'lucide-react';
+import {
+  WHATSAPP_DISPLAY,
+  getBoutiqueShareUrl,
+  getCompactProductThumbnail,
+  formatFCFA,
+  getStoredReferralCode,
+  saveStoredReferralCode,
+  normalizeReferralCode
+} from './utils/whatsapp.ts';
 
 export default function App() {
   // Navigation & View state
@@ -57,12 +85,34 @@ export default function App() {
   });
   const [isAdminAuthModalOpen, setIsAdminAuthModalOpen] = useState<boolean>(false);
 
-  // Products & Categories persistent state
-  const [products, setProducts] = useState<Product[]>(loadStoredProducts);
-  const [categories, setCategories] = useState<Category[]>(loadStoredCategories);
+  // Products & Categories persistent state (bootstrapped synchronously from server HTML or compact v2 cache)
+  const [bootstrapSnapshot] = useState(getBootstrapCatalog);
+  const [products, setProducts] = useState<Product[]>(bootstrapSnapshot.products);
+  const [categories, setCategories] = useState<Category[]>(bootstrapSnapshot.categories);
   const [orders, setOrders] = useState<WhatsAppOrder[]>([]);
   const [leads, setLeads] = useState<ClientLead[]>([]);
-  const [mediaConfig, setMediaConfig] = useState<SiteMediaConfig>(loadStoredMediaConfig);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [mediaConfig, setMediaConfig] = useState<SiteMediaConfig>(bootstrapSnapshot.mediaConfig);
+  const [isCatalogLoading, setIsCatalogLoading] = useState<boolean>(() => !bootstrapSnapshot.ready);
+  const [isAdminCatalogReady, setIsAdminCatalogReady] = useState<boolean>(false);
+
+  // Team sharing & referral tracking state
+  const [activeReferralCode, setActiveReferralCode] = useState<string>(() => getStoredReferralCode());
+  const [teamSession, setTeamSession] = useState<TeamPortalSession | null>(() => {
+    try {
+      const saved = sessionStorage.getItem('huize_team_session_v1');
+      return saved ? (JSON.parse(saved) as TeamPortalSession) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [memberShareCode, setMemberShareCode] = useState<string>(() => {
+    try {
+      return normalizeReferralCode(localStorage.getItem('huize_member_share_code_v1'));
+    } catch {
+      return '';
+    }
+  });
 
   // Cart state
   const [cart, setCart] = useState<CartItem[]>(() => {
@@ -87,6 +137,15 @@ export default function App() {
   // Modal State
   const [modalProduct, setModalProduct] = useState<Product | null>(null);
   const [shareModalProduct, setShareModalProduct] = useState<Product | null>(null);
+  const [orderPreviewProducts, setOrderPreviewProducts] = useState<Product[] | null>(null);
+
+  // In-Site Real-Time Order Messaging State
+  const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
+  const [chatDraftOrder, setChatDraftOrder] = useState<OrderDraftContext | null>(null);
+  const [chatOpenTarget, setChatOpenTarget] = useState<{
+    orderId: string;
+    accessToken: string;
+  } | null>(null);
 
   // Shop Catalogue Filters
   const [shopCategoryFilter, setShopCategoryFilter] = useState<string>('all');
@@ -143,39 +202,110 @@ export default function App() {
     );
   };
 
-  // Load shared catalog from server-side cache (0 direct Firestore reads per visitor)
+  // Sync latest shared catalog from lightweight server cache (~15 KB, 0 per-visitor Firestore reads)
   useEffect(() => {
     let cancelled = false;
-    fetchCatalogFromServer().then((cached) => {
-      if (cancelled || !cached) return;
-      if (cached.products && cached.products.length > 0) {
-        setProducts(cached.products);
-      }
-      if (cached.categories && cached.categories.length > 0) {
-        setCategories(cached.categories);
-      }
-      if (cached.mediaConfig) {
-        setMediaConfig(cached.mediaConfig);
-      }
-    });
+    fetchCatalogFromServer(false)
+      .then((cached) => {
+        if (cancelled) return;
+        if (cached) {
+          if (cached.products && cached.products.length > 0) {
+            setProducts(cached.products);
+          } else {
+            setProducts((prev) => (prev.length > 0 ? prev : INITIAL_PRODUCTS));
+          }
+          if (cached.categories && cached.categories.length > 0) {
+            setCategories(cached.categories);
+          }
+          if (cached.mediaConfig) {
+            setMediaConfig(cached.mediaConfig);
+          }
+        } else {
+          setProducts((prev) => (prev.length > 0 ? prev : INITIAL_PRODUCTS));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsCatalogLoading(false);
+        }
+      });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  // Load private admin collections (orders & leads) ONLY when authenticated as admin
+  // Capture ?ref=CODE and ?equipe=1 deep-links on first load
   useEffect(() => {
-    if (!isAdminAuthenticated) return;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const refParam = params.get('ref');
+      if (refParam) {
+        const cleanRef = saveStoredReferralCode(refParam);
+        if (cleanRef) {
+          setActiveReferralCode(cleanRef);
+          const ownCode = normalizeReferralCode(teamSession?.code || memberShareCode);
+          const sessionKey = `huize_tracked_ref_${cleanRef}`;
+          if (cleanRef !== ownCode && !sessionStorage.getItem(sessionKey)) {
+            sessionStorage.setItem(sessionKey, '1');
+            trackTeamClickOnServer(cleanRef);
+          }
+        }
+      }
+      if (params.get('equipe') === '1' || window.location.hash === '#equipe') {
+        setActiveTab('equipe');
+      }
+      const suiviOrderId = params.get('suivi');
+      const suiviCle =
+        params.get('cle') || (suiviOrderId ? getStoredTokenForOrder(suiviOrderId) : null);
+      if (suiviOrderId && suiviCle) {
+        setChatOpenTarget({ orderId: suiviOrderId, accessToken: suiviCle });
+        setIsChatOpen(true);
+      }
+
+      const isAdminEntry =
+        window.location.hash === '#admin' || Boolean(params.get('admin'));
+      void trackStoreVisitOnServer(isAdminEntry);
+    } catch (err) {
+      console.warn('Referral query parsing skipped:', err);
+    }
+  }, []);
+
+  // Load private admin collections & full raw catalog (with inline data URLs for editing) ONLY when authenticated as admin
+  useEffect(() => {
+    if (!isAdminAuthenticated) {
+      setIsAdminCatalogReady(false);
+      return;
+    }
     let cancelled = false;
 
-    Promise.all([fetchOrdersOnce(), fetchLeadsOnce()]).then(([ordersData, leadsData]) => {
+    Promise.all([
+      fetchCatalogFromServer(true),
+      fetchOrdersOnce(),
+      fetchLeadsOnce(),
+      fetchTeamMembersOnce()
+    ]).then(([fullCatalog, ordersData, leadsData, teamData]) => {
       if (cancelled) return;
-      if (ordersData && ordersData.length > 0) {
+      if (fullCatalog) {
+        if (fullCatalog.products && fullCatalog.products.length > 0) {
+          setProducts(fullCatalog.products);
+        }
+        if (fullCatalog.categories && fullCatalog.categories.length > 0) {
+          setCategories(fullCatalog.categories);
+        }
+        if (fullCatalog.mediaConfig) {
+          setMediaConfig(fullCatalog.mediaConfig);
+        }
+      }
+      if (ordersData) {
         setOrders(ordersData);
       }
-      if (leadsData && leadsData.length > 0) {
+      if (leadsData) {
         setLeads(leadsData);
       }
+      if (teamData) {
+        setTeamMembers(teamData);
+      }
+      setIsAdminCatalogReady(true);
     });
 
     return () => {
@@ -183,22 +313,42 @@ export default function App() {
     };
   }, [isAdminAuthenticated]);
 
-  // Fallback cache products to localStorage
+  // Fallback cache products to localStorage once catalog is loaded
   useEffect(() => {
-    saveStoredProducts(products);
-  }, [products]);
+    if (!isCatalogLoading && products.length > 0) {
+      saveStoredProducts(products);
+    }
+  }, [products, isCatalogLoading]);
 
-  // Deep-linking: auto-open product modal when visiting via shared link (?produit=ID or ?product=ID)
+  // Deep-linking: auto-open product modal (?produit=ID) or multi-item order preview (?commande=id1,id2,...)
   useEffect(() => {
     try {
       const params = new URLSearchParams(window.location.search);
       const targetId = params.get('produit') || params.get('product');
+      const targetCommande = params.get('commande');
       if (targetId && products.length > 0) {
         const found = products.find(
           (p) => p.id === targetId || p.ref.toLowerCase() === targetId.toLowerCase()
         );
         if (found) {
           setModalProduct(found);
+        }
+      } else if (targetCommande && products.length > 0) {
+        const ids = Array.from(
+          new Set(
+            targetCommande
+              .split(',')
+              .map((s) => s.trim())
+              .filter(Boolean)
+          )
+        );
+        const matched = ids
+          .map((id) => products.find((p) => p.id === id || p.ref.toLowerCase() === id.toLowerCase()))
+          .filter((p): p is Product => Boolean(p));
+        if (matched.length === 1) {
+          setModalProduct(matched[0]);
+        } else if (matched.length > 1) {
+          setOrderPreviewProducts(matched);
         }
       }
     } catch (err) {
@@ -208,22 +358,41 @@ export default function App() {
 
   // Fallback cache categories to localStorage
   useEffect(() => {
-    saveStoredCategories(categories);
-  }, [categories]);
+    if (!isCatalogLoading && categories.length > 0) {
+      saveStoredCategories(categories);
+    }
+  }, [categories, isCatalogLoading]);
 
   // Fallback cache mediaConfig to localStorage & sync favicon if custom logoUrl is set
   useEffect(() => {
-    saveStoredMediaConfig(mediaConfig);
-    if (mediaConfig.logoUrl) {
-      let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement | null;
-      if (!link) {
-        link = document.createElement('link');
-        link.rel = 'icon';
-        document.head.appendChild(link);
-      }
-      link.href = mediaConfig.logoUrl;
+    if (!isCatalogLoading) {
+      saveStoredMediaConfig(mediaConfig);
     }
-  }, [mediaConfig]);
+    if (mediaConfig.logoUrl) {
+      const logoHref = mediaConfig.logoUrl;
+      const isSvg = logoHref.startsWith('data:image/svg') || /\.svg(\?|$)/i.test(logoHref);
+      const mimeType = isSvg ? 'image/svg+xml' : 'image/png';
+
+      const syncHeadLink = (relValue: string, withType: boolean) => {
+        let link = document.querySelector(`link[rel="${relValue}"]`) as HTMLLinkElement | null;
+        if (!link) {
+          link = document.createElement('link');
+          link.rel = relValue;
+          document.head.appendChild(link);
+        }
+        if (withType) {
+          link.type = mimeType;
+        } else {
+          link.removeAttribute('type');
+        }
+        link.href = logoHref;
+      };
+
+      syncHeadLink('icon', true);
+      syncHeadLink('shortcut icon', false);
+      syncHeadLink('apple-touch-icon', false);
+    }
+  }, [mediaConfig, isCatalogLoading]);
 
   // Sync cart to localStorage
   useEffect(() => {
@@ -286,9 +455,19 @@ export default function App() {
     customerPhone: string;
     customerCity: string;
     itemsSummary: string;
+    items?: OrderItemSnapshot[];
     total: number;
     paymentMethod: string;
+    referralCode?: string;
   }) => {
+    const cleanRef = normalizeReferralCode(orderData.referralCode || activeReferralCode);
+    if (cleanRef) {
+      saveStoredReferralCode(cleanRef);
+      setActiveReferralCode(cleanRef);
+    }
+
+    const matchedMember = teamMembers.find((m) => normalizeReferralCode(m.code) === cleanRef);
+
     const newOrder: WhatsAppOrder = {
       id: `CMD-${Math.floor(1000 + Math.random() * 9000)}`,
       customerName: orderData.customerName,
@@ -297,6 +476,7 @@ export default function App() {
       customerPhone: orderData.customerPhone,
       customerCity: orderData.customerCity,
       itemsSummary: orderData.itemsSummary,
+      ...(orderData.items && orderData.items.length > 0 ? { items: orderData.items } : {}),
       total: orderData.total,
       date: new Date().toLocaleDateString('fr-FR', {
         day: '2-digit',
@@ -307,10 +487,16 @@ export default function App() {
       }),
       status: 'pending',
       statusLabel: 'À livrer',
-      paymentMethod: orderData.paymentMethod
+      paymentMethod: orderData.paymentMethod,
+      channel: 'whatsapp',
+      createdAt: new Date().toISOString(),
+      ...(cleanRef ? { referredByCode: cleanRef } : {}),
+      ...(matchedMember ? { referredByName: matchedMember.name } : {})
     };
 
     setOrders((prev) => [newOrder, ...prev]);
+    syncTeamServerCache({ order: newOrder });
+    void trackOrderEventOnServer('whatsapp');
 
     const cleanPhone = orderData.customerPhone.replace(/[^0-9]/g, '');
     const hasRealIdentity =
@@ -348,13 +534,36 @@ export default function App() {
   };
 
   // Register direct product WhatsApp click as a real inquiry/order
-  const handleDirectProductOrder = async (product: Product, size: string, quantity: number) => {
+  const handleDirectProductOrder = async (
+    product: Product,
+    size: string,
+    quantity: number,
+    referralCode?: string
+  ) => {
+    const cleanRef = normalizeReferralCode(referralCode || activeReferralCode);
+    if (cleanRef) {
+      saveStoredReferralCode(cleanRef);
+      setActiveReferralCode(cleanRef);
+    }
+    const matchedMember = teamMembers.find((m) => normalizeReferralCode(m.code) === cleanRef);
+
     const newOrder: WhatsAppOrder = {
       id: `CMD-${Math.floor(1000 + Math.random() * 9000)}`,
       customerName: 'Client Direct WhatsApp',
       phone: 'Non précisé',
       city: 'Burkina Faso',
       itemsSummary: `${quantity}x ${product.name} (${size || 'Standard'})`,
+      items: [
+        {
+          productId: product.id,
+          name: product.name,
+          ref: product.ref,
+          image: getCompactProductThumbnail(product),
+          size: size || 'Standard',
+          quantity,
+          price: product.price
+        }
+      ],
       total: product.price * quantity,
       date: new Date().toLocaleDateString('fr-FR', {
         day: '2-digit',
@@ -365,10 +574,16 @@ export default function App() {
       }),
       status: 'discussion',
       statusLabel: 'En discussion',
-      paymentMethod: 'À convenir sur WhatsApp'
+      paymentMethod: 'À convenir sur WhatsApp',
+      channel: 'whatsapp',
+      createdAt: new Date().toISOString(),
+      ...(cleanRef ? { referredByCode: cleanRef } : {}),
+      ...(matchedMember ? { referredByName: matchedMember.name } : {})
     };
 
     setOrders((prev) => [newOrder, ...prev]);
+    syncTeamServerCache({ order: newOrder });
+    void trackOrderEventOnServer('whatsapp');
     saveOrderToDb(newOrder).catch(() => {});
   };
 
@@ -417,19 +632,47 @@ export default function App() {
     }
   };
 
-  const handleAddCategory = async (name: string, icon: string) => {
-    const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const createCategorySlug = (name: string) => {
+    const base =
+      name
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '') || `cat-${Date.now()}`;
+
+    let candidate = base;
+    let counter = 2;
+    while (categories.some((c) => c.slug === candidate)) {
+      candidate = `${base}-${counter}`;
+      counter += 1;
+    }
+    return candidate;
+  };
+
+  const handleAddCategory = async (input: {
+    name: string;
+    icon: string;
+    badge?: string;
+    subtitle?: string;
+    image?: string;
+  }) => {
+    const slug = createCategorySlug(input.name);
     const newCat: Category = {
       id: `cat-${Date.now()}`,
-      name,
-      icon,
-      badge: 'NOUVEAU',
+      name: input.name.trim(),
+      icon: input.icon || '🛍️',
+      badge: (input.badge || 'NOUVEAU').trim().toUpperCase(),
       itemCount: 0,
-      slug
+      slug,
+      ...(input.subtitle?.trim() ? { subtitle: input.subtitle.trim() } : {}),
+      ...(input.image?.trim() ? { image: input.image.trim() } : {})
     };
-    setCategories((prev) => [...prev, newCat]);
+    const nextCategories = [...categories, newCat];
+    setCategories(nextCategories);
+    saveStoredCategories(nextCategories);
     syncServerCatalog({ category: newCat });
-    showToast(`Catégorie "${name}" créée`);
+    showToast(`Catégorie "${newCat.name}" créée`);
     try {
       await saveCategoryToDb(newCat);
     } catch (e) {
@@ -437,8 +680,49 @@ export default function App() {
     }
   };
 
+  const handleUpdateCategory = async (updated: Category) => {
+    const cleanCat: Category = {
+      ...updated,
+      name: updated.name.trim(),
+      badge: (updated.badge || 'COLLECTION').trim().toUpperCase(),
+      subtitle: updated.subtitle?.trim() || undefined,
+      image: updated.image?.trim() || undefined
+    };
+
+    const nextCategories = categories.map((c) => (c.id === cleanCat.id ? cleanCat : c));
+    setCategories(nextCategories);
+    saveStoredCategories(nextCategories);
+    syncServerCatalog({ category: cleanCat });
+
+    // Sync categoryLabel on existing products of this category if renamed
+    const affectedProducts = products.filter(
+      (p) => p.category === cleanCat.slug && p.categoryLabel !== cleanCat.name
+    );
+    if (affectedProducts.length > 0) {
+      const nextProducts = products.map((p) =>
+        p.category === cleanCat.slug ? { ...p, categoryLabel: cleanCat.name } : p
+      );
+      setProducts(nextProducts);
+      saveStoredProducts(nextProducts);
+      affectedProducts.forEach((p) => {
+        const updatedProd = { ...p, categoryLabel: cleanCat.name };
+        syncServerCatalog({ product: updatedProd });
+        saveProductToDb(updatedProd).catch(() => {});
+      });
+    }
+
+    showToast(`Catégorie "${cleanCat.name}" mise à jour`);
+    try {
+      await saveCategoryToDb(cleanCat);
+    } catch (e) {
+      console.error('Failed to update category in Firestore', e);
+    }
+  };
+
   const handleDeleteCategory = async (id: string) => {
-    setCategories((prev) => prev.filter((c) => c.id !== id));
+    const nextCategories = categories.filter((c) => c.id !== id);
+    setCategories(nextCategories);
+    saveStoredCategories(nextCategories);
     syncServerCatalog({ deletedCategoryId: id });
     showToast('Catégorie supprimée');
     try {
@@ -455,14 +739,56 @@ export default function App() {
       delivered: 'Livré',
       discussion: 'En discussion'
     };
+    let updatedOrder: WhatsAppOrder | null = null;
     setOrders((prev) =>
-      prev.map((o) => (o.id === orderId ? { ...o, status, statusLabel: statusMap[status] } : o))
+      prev.map((o) => {
+        if (o.id === orderId) {
+          updatedOrder = { ...o, status, statusLabel: statusMap[status] };
+          return updatedOrder;
+        }
+        return o;
+      })
     );
+    if (updatedOrder) {
+      syncTeamServerCache({ order: updatedOrder });
+    }
     showToast(`Statut de la commande mis à jour`);
     try {
       await updateOrderStatusInDb(orderId, status);
     } catch (e) {
       console.error('Failed to update order in Firestore', e);
+    }
+  };
+
+  const handleAssignOrderReferral = async (orderId: string, referralCode: string) => {
+    const cleanCode = normalizeReferralCode(referralCode);
+    const matched = teamMembers.find((m) => normalizeReferralCode(m.code) === cleanCode);
+    const refName = matched ? matched.name : '';
+    let updatedOrder: WhatsAppOrder | null = null;
+
+    setOrders((prev) =>
+      prev.map((o) => {
+        if (o.id === orderId) {
+          updatedOrder = {
+            ...o,
+            referredByCode: cleanCode || undefined,
+            referredByName: refName || undefined
+          };
+          return updatedOrder;
+        }
+        return o;
+      })
+    );
+    if (updatedOrder) {
+      syncTeamServerCache({ order: updatedOrder });
+    }
+    showToast(
+      cleanCode ? `Commande attribuée à ${matched?.name || cleanCode}` : 'Attribution retirée'
+    );
+    try {
+      await updateOrderReferralInDb(orderId, cleanCode, refName);
+    } catch (e) {
+      console.error('Failed to assign order referral in Firestore', e);
     }
   };
 
@@ -479,6 +805,7 @@ export default function App() {
 
   const handleDeleteOrder = async (orderId: string) => {
     setOrders((prev) => prev.filter((o) => o.id !== orderId));
+    syncTeamServerCache({ deletedOrderId: orderId });
     showToast('Commande supprimée');
     try {
       await deleteOrderFromDb(orderId);
@@ -497,10 +824,64 @@ export default function App() {
     }
   };
 
+  const handleAddTeamMember = async (input: {
+    name: string;
+    code: string;
+    pin: string;
+    phone?: string;
+  }) => {
+    const newMember: TeamMember = {
+      id: `tm-${Date.now()}`,
+      name: input.name,
+      code: normalizeReferralCode(input.code),
+      pin: input.pin.trim(),
+      ...(input.phone ? { phone: input.phone } : {}),
+      active: true,
+      clicks: 0,
+      createdAt: new Date().toISOString()
+    };
+    setTeamMembers((prev) => [newMember, ...prev]);
+    syncTeamServerCache({ teamMember: newMember });
+    showToast(`Membre "${newMember.name}" (${newMember.code}) ajouté !`);
+    try {
+      await saveTeamMemberToDb(newMember);
+    } catch (e) {
+      console.error('Failed to save team member to Firestore', e);
+    }
+  };
+
+  const handleUpdateTeamMember = async (updated: TeamMember) => {
+    setTeamMembers((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+    syncTeamServerCache({ teamMember: updated });
+    showToast(`Compte de "${updated.name}" mis à jour`);
+    try {
+      await saveTeamMemberToDb(updated);
+    } catch (e) {
+      console.error('Failed to update team member in Firestore', e);
+    }
+  };
+
+  const handleDeleteTeamMember = async (memberId: string) => {
+    setTeamMembers((prev) => prev.filter((m) => m.id !== memberId));
+    syncTeamServerCache({ deletedTeamMemberId: memberId });
+    showToast('Membre retiré de l’équipe');
+    try {
+      await deleteTeamMemberFromDb(memberId);
+    } catch (e) {
+      console.error('Failed to delete team member from Firestore', e);
+    }
+  };
+
   const handleRefreshAdminData = async () => {
-    const [ordersData, leadsData] = await Promise.all([fetchOrdersOnce(), fetchLeadsOnce()]);
+    const [ordersData, leadsData, teamData] = await Promise.all([
+      fetchOrdersOnce(),
+      fetchLeadsOnce(),
+      fetchTeamMembersOnce()
+    ]);
     if (ordersData) setOrders(ordersData);
     if (leadsData) setLeads(leadsData);
+    if (teamData) setTeamMembers(teamData);
+    syncTeamServerCache({ forceRefresh: true });
     showToast('Données actualisées');
   };
 
@@ -557,7 +938,11 @@ export default function App() {
 
   // Synchronize Tab changes
   const handleTabChange = (tab: string) => {
-    if (tab === 'baskets') {
+    if (tab.startsWith('cat:')) {
+      setActiveTab('boutique');
+      setShopCategoryFilter(tab.slice(4));
+      setIsAdminMode(false);
+    } else if (tab === 'baskets') {
       setActiveTab('boutique');
       setShopCategoryFilter('chaussures');
       setIsAdminMode(false);
@@ -579,8 +964,8 @@ export default function App() {
     } else {
       setActiveTab(tab);
       setIsAdminMode(false);
-      if (tab === 'boutique' && shopCategoryFilter !== 'all') {
-        // preserve or reset
+      if (tab === 'boutique') {
+        setShopCategoryFilter('all');
       }
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -618,27 +1003,62 @@ export default function App() {
       return 0;
     });
 
+  const featuredProducts = products.filter((p) => p.featured === true);
+
   const cartTotalCount = cart.reduce((acc, i) => acc + i.quantity, 0);
 
-  // If in admin mode AND authenticated, show dashboard
+  // If in admin mode AND authenticated, show dashboard (once full raw images are ready)
   if ((isAdminMode || activeTab === 'admin') && isAdminAuthenticated) {
+    if (!isAdminCatalogReady) {
+      return (
+        <div className="min-h-screen bg-[#F8F7F2] flex items-center justify-center p-6">
+          <div className="bg-white border border-[#E1E3DA] rounded-2xl p-6 text-center shadow-xs max-w-sm w-full">
+            <div className="w-8 h-8 border-2 border-[#123B2A] border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-sm font-bold text-[#123B2A]">Chargement de l&apos;espace commerçant...</p>
+            <p className="text-xs text-[#6B726C] mt-1">Synchronisation des articles et photos en cours</p>
+          </div>
+        </div>
+      );
+    }
     return (
       <AdminDashboard
         products={products}
         categories={categories}
         orders={orders}
         leads={leads}
+        teamMembers={teamMembers}
         mediaConfig={mediaConfig}
         onUpdateMediaConfig={handleUpdateMediaConfig}
         onAddProduct={handleAddProduct}
         onUpdateProduct={handleUpdateProduct}
         onDeleteProduct={handleDeleteProduct}
         onAddCategory={handleAddCategory}
+        onUpdateCategory={handleUpdateCategory}
         onDeleteCategory={handleDeleteCategory}
         onUpdateOrderStatus={handleUpdateOrderStatus}
+        onAssignOrderReferral={handleAssignOrderReferral}
         onDeleteOrder={handleDeleteOrder}
         onDeleteLead={handleDeleteLead}
+        onAddTeamMember={handleAddTeamMember}
+        onUpdateTeamMember={handleUpdateTeamMember}
+        onDeleteTeamMember={handleDeleteTeamMember}
         onRefreshAdminData={handleRefreshAdminData}
+        onSyncOrderStatus={(orderId, status) => {
+          const statusMap: Record<WhatsAppOrder['status'], string> = {
+            pending: 'À livrer',
+            paid: 'Payé (Orange/Moov)',
+            delivered: 'Livré',
+            discussion: 'En discussion'
+          };
+          setOrders((prev) =>
+            prev.map((o) =>
+              o.id === orderId ? { ...o, status, statusLabel: statusMap[status] } : o
+            )
+          );
+        }}
+        onNewSiteOrderReceived={(incomingOrder) => {
+          setOrders((prev) => [incomingOrder, ...prev.filter((o) => o.id !== incomingOrder.id)]);
+        }}
         onExitAdmin={() => {
           setIsAdminMode(false);
           setActiveTab('accueil');
@@ -671,7 +1091,7 @@ export default function App() {
 
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-5 right-5 z-50 bg-[#123B2A] text-white px-4 py-3 rounded-xl shadow-xl flex items-center gap-2 border border-[#D8F36A] animate-fade-in text-xs sm:text-sm font-semibold">
+        <div className="fixed bottom-20 right-4 z-50 bg-[#123B2A] text-white px-4 py-3 rounded-xl shadow-xl flex items-center gap-2 border border-[#D8F36A] animate-fade-in text-xs sm:text-sm font-semibold">
           <Check className="w-4 h-4 text-[#D8F36A]" />
           <span>{toastMessage}</span>
         </div>
@@ -680,7 +1100,9 @@ export default function App() {
       {/* Main Navbar */}
       <Navbar
         activeTab={activeTab}
+        activeCategorySlug={shopCategoryFilter}
         setActiveTab={handleTabChange}
+        categories={categories}
         cartCount={cartTotalCount}
         onOpenCart={() => {
           setActiveTab('panier');
@@ -696,6 +1118,64 @@ export default function App() {
         isAdminMode={isAdminMode}
         setIsAdminMode={setIsAdminMode}
       />
+
+      {/* Active Team Sharing Indicator (shown when a team member browses & shares directly on the storefront) */}
+      {(teamSession || memberShareCode) && activeTab !== 'equipe' && (
+        <div className="bg-[#FAF9F5] border-b border-[#E1E3DA] px-4 py-2 text-xs text-[#123B2A]">
+          <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-2">
+            <p className="truncate">
+              Mode partage équipe :{' '}
+              <strong className="font-mono">
+                {teamSession ? `${teamSession.member.name} (${teamSession.code})` : memberShareCode}
+              </strong>
+              <span className="hidden sm:inline text-[#6B726C]">
+                {' '}— Vos partages sur la boutique incluent automatiquement votre code
+              </span>
+            </p>
+            <div className="flex items-center gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={async () => {
+                  const code = teamSession?.code || memberShareCode;
+                  try {
+                    await navigator.clipboard.writeText(getBoutiqueShareUrl(code));
+                    showToast(`Lien boutique copié avec votre code (${code}) !`);
+                  } catch {
+                    showToast('Impossible de copier le lien.');
+                  }
+                }}
+                className="font-bold text-[#1F5A40] hover:underline cursor-pointer whitespace-nowrap"
+              >
+                Partager la boutique
+              </button>
+              <button
+                type="button"
+                onClick={() => handleTabChange('equipe')}
+                className="font-bold text-[#123B2A] hover:underline cursor-pointer whitespace-nowrap"
+              >
+                Mon espace
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTeamSession(null);
+                  setMemberShareCode('');
+                  try {
+                    sessionStorage.removeItem('huize_team_session_v1');
+                    localStorage.removeItem('huize_member_share_code_v1');
+                  } catch {
+                    // Ignore storage errors
+                  }
+                  showToast('Mode partage équipe désactivé');
+                }}
+                className="text-[#6B726C] hover:text-[#123B2A] cursor-pointer whitespace-nowrap"
+              >
+                Quitter
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <main className="flex-1">
         {/* VIEW 1: ACCUEIL */}
@@ -720,6 +1200,8 @@ export default function App() {
             />
 
             <CategoryShowcase
+              categories={categories}
+              products={products}
               onSelectCategory={(cat) => {
                 setActiveTab('boutique');
                 setShopCategoryFilter(cat);
@@ -740,99 +1222,35 @@ export default function App() {
                   </p>
                 </div>
 
-                {/* Filters & Tools Bar */}
-                <div className="bg-[#FAF9F5] border border-[#E1E3DA] rounded-2xl p-4 sm:p-5 mb-8 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
-                  {/* Category Filter Chips */}
-                  <div className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap scrollbar-none">
-                    <button
-                      onClick={() => setShopCategoryFilter('all')}
-                      className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                        shopCategoryFilter === 'all'
-                          ? 'bg-[#123B2A] text-white shadow-xs'
-                          : 'bg-white border border-[#E1E3DA] text-[#123B2A] hover:bg-[#EFEFE6]'
-                      }`}
-                    >
-                      Tous ({products.length})
-                    </button>
-                    {likedProductIds.length > 0 && (
-                      <button
-                        onClick={() => setShopCategoryFilter('favoris')}
-                        className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
-                          shopCategoryFilter === 'favoris'
-                            ? 'bg-red-600 text-white shadow-xs'
-                            : 'bg-white border border-[#E1E3DA] text-red-600 hover:bg-red-50'
-                        }`}
-                      >
-                        <Heart className="w-3.5 h-3.5 fill-current" />
-                        <span>Coups de cœur ({likedProductIds.length})</span>
-                      </button>
-                    )}
-                    {categories.map((c) => {
-                      const count = products.filter((p) => p.category === c.slug).length;
-                      return (
-                        <button
-                          key={c.id}
-                          onClick={() => setShopCategoryFilter(c.slug)}
-                          className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                            shopCategoryFilter === c.slug
-                              ? 'bg-[#123B2A] text-white shadow-xs'
-                              : 'bg-white border border-[#E1E3DA] text-[#123B2A] hover:bg-[#EFEFE6]'
-                          }`}
-                        >
-                          {c.icon} {c.name} ({count})
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Search and Sort */}
-                  <div className="flex flex-wrap sm:flex-nowrap items-center gap-3">
-                    <div className="relative w-full sm:w-56">
-                      <Search className="w-4 h-4 text-[#6B726C] absolute left-3 top-1/2 -translate-y-1/2" />
-                      <input
-                        type="text"
-                        placeholder="Rechercher..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-9 pr-3 py-2 bg-white border border-[#E1E3DA] rounded-lg text-xs focus:outline-[#1F5A40]"
+                {/* Featured Grid (managed from Admin) */}
+                {isCatalogLoading && featuredProducts.length === 0 ? (
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <div
+                        key={i}
+                        className="bg-[#FAF9F5] border border-[#E1E3DA] rounded-2xl h-72 animate-pulse"
                       />
-                    </div>
-
-                    <select
-                      value={sortOption}
-                      onChange={(e) => setSortOption(e.target.value)}
-                      className="w-full sm:w-auto p-2 bg-white border border-[#E1E3DA] rounded-lg text-xs text-[#123B2A] focus:outline-[#1F5A40]"
-                    >
-                      <option value="default">Sélection HUIZE</option>
-                      <option value="popular">❤️ Les plus aimés</option>
-                      <option value="newest">Nouveautés d'abord</option>
-                      <option value="price-asc">Prix croissant</option>
-                      <option value="price-desc">Prix décroissant</option>
-                    </select>
+                    ))}
                   </div>
-                </div>
-
-                {/* Grid */}
-                {catalogFilteredProducts.length === 0 ? (
+                ) : featuredProducts.length === 0 ? (
                   <div className="text-center py-12 bg-[#FAF9F5] rounded-xl border border-[#E1E3DA]">
                     <p className="text-sm font-semibold text-[#6B726C]">
-                      {shopCategoryFilter === 'favoris'
-                        ? "Vous n'avez pas encore de coup de cœur enregistré. Cliquez sur le cœur ❤️ d'un article pour le retrouver ici !"
-                        : 'Aucun article ne correspond à votre recherche.'}
+                      Aucun produit phare sélectionné pour le moment.
                     </p>
                     <button
                       onClick={() => {
-                        setSearchQuery('');
+                        setActiveTab('boutique');
                         setShopCategoryFilter('all');
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
                       }}
                       className="mt-3 text-xs text-[#1F5A40] underline font-bold cursor-pointer"
                     >
-                      Afficher tous les articles
+                      Découvrir toute la boutique ({products.length} articles)
                     </button>
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
-                    {catalogFilteredProducts.slice(0, 8).map((product) => (
+                    {featuredProducts.map((product) => (
                       <ProductCard
                         key={product.id}
                         product={product}
@@ -841,6 +1259,8 @@ export default function App() {
                         isLiked={likedProductIds.includes(product.id)}
                         onToggleLike={handleToggleLike}
                         onOpenShare={(p) => setShareModalProduct(p)}
+                        referralCode={activeReferralCode}
+                        onDirectWhatsAppOrder={handleDirectProductOrder}
                       />
                     ))}
                   </div>
@@ -860,6 +1280,12 @@ export default function App() {
                 </div>
               </div>
             </section>
+
+            <CustomerReviewsSection
+              onReviewSubmitted={() =>
+                showToast('⭐ Merci ! Votre avis est maintenant visible sur la boutique.')
+              }
+            />
 
             <Reassurance />
             <PaymentDelivery />
@@ -950,7 +1376,16 @@ export default function App() {
             </div>
 
             {/* Product Grid */}
-            {catalogFilteredProducts.length === 0 ? (
+            {isCatalogLoading && catalogFilteredProducts.length === 0 ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <div
+                    key={i}
+                    className="bg-white border border-[#E1E3DA] rounded-2xl h-72 animate-pulse"
+                  />
+                ))}
+              </div>
+            ) : catalogFilteredProducts.length === 0 ? (
               <div className="text-center py-16 bg-white rounded-2xl border border-[#E1E3DA]">
                 <p className="text-sm font-semibold text-[#6B726C]">
                   {shopCategoryFilter === 'favoris'
@@ -978,6 +1413,8 @@ export default function App() {
                     isLiked={likedProductIds.includes(product.id)}
                     onToggleLike={handleToggleLike}
                     onOpenShare={(p) => setShareModalProduct(p)}
+                    referralCode={activeReferralCode}
+                    onDirectWhatsAppOrder={handleDirectProductOrder}
                   />
                 ))}
               </div>
@@ -992,7 +1429,12 @@ export default function App() {
             onUpdateQuantity={handleUpdateQuantity}
             onRemoveItem={handleRemoveItem}
             onClearCart={handleClearCart}
+            initialReferralCode={activeReferralCode}
             onOrderPlaced={handleOrderPlaced}
+            onStartSiteOrder={(draft) => {
+              setChatDraftOrder(draft);
+              setIsChatOpen(true);
+            }}
             onContinueShopping={() => {
               setActiveTab('boutique');
               window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1010,6 +1452,37 @@ export default function App() {
 
         {/* VIEW 5: CONTACT */}
         {activeTab === 'contact' && <ContactView />}
+
+        {/* VIEW 6: ESPACE EQUIPE & PARTAGE */}
+        {activeTab === 'equipe' && (
+          <TeamPortalView
+            products={products}
+            session={teamSession}
+            onLoginSuccess={(nextSession) => {
+              setTeamSession(nextSession);
+              setMemberShareCode(nextSession.code);
+              try {
+                sessionStorage.setItem('huize_team_session_v1', JSON.stringify(nextSession));
+                localStorage.setItem('huize_member_share_code_v1', nextSession.code);
+              } catch {
+                // Ignore storage errors
+              }
+            }}
+            onLogout={() => {
+              setTeamSession(null);
+              setMemberShareCode('');
+              try {
+                sessionStorage.removeItem('huize_team_session_v1');
+                localStorage.removeItem('huize_member_share_code_v1');
+              } catch {
+                // Ignore storage errors
+              }
+              showToast('Session équipe déconnectée');
+            }}
+            onOpenShop={() => handleTabChange('accueil')}
+            onShowToast={showToast}
+          />
+        )}
       </main>
 
       {/* Product Detail Modal */}
@@ -1020,7 +1493,26 @@ export default function App() {
         isLiked={modalProduct ? likedProductIds.includes(modalProduct.id) : false}
         onToggleLike={handleToggleLike}
         onOpenShare={(p) => setShareModalProduct(p)}
+        initialReferralCode={activeReferralCode}
         onDirectWhatsAppOrder={handleDirectProductOrder}
+        onStartSiteOrder={(product, size, quantity, referralCode) => {
+          setChatDraftOrder({
+            items: [
+              {
+                productId: product.id,
+                name: product.name,
+                ref: product.ref,
+                image: getCompactProductThumbnail(product),
+                size: size || product.sizes?.[0] || 'Standard',
+                quantity,
+                price: product.price
+              }
+            ],
+            referralCode: referralCode || activeReferralCode || undefined,
+            clearCartOnSuccess: false
+          });
+          setIsChatOpen(true);
+        }}
       />
 
       {/* Product Share Modal */}
@@ -1029,11 +1521,89 @@ export default function App() {
         isOpen={Boolean(shareModalProduct)}
         onClose={() => setShareModalProduct(null)}
         onShowToast={showToast}
+        referralCode={teamSession?.code || memberShareCode || activeReferralCode || undefined}
+        onChangeReferralCode={(nextCode) => {
+          const clean = normalizeReferralCode(nextCode);
+          setMemberShareCode(clean);
+          try {
+            if (clean) {
+              localStorage.setItem('huize_member_share_code_v1', clean);
+            } else {
+              localStorage.removeItem('huize_member_share_code_v1');
+            }
+          } catch {
+            // Ignore storage errors
+          }
+        }}
       />
+
+      {/* Multi-product Order Visual Preview Modal (?commande=...) */}
+      {orderPreviewProducts && orderPreviewProducts.length > 0 && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setOrderPreviewProducts(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#123B2A]/65 backdrop-blur-xs"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-[#E1E3DA] p-5 sm:p-6 max-h-[85vh] overflow-y-auto"
+          >
+            <div className="flex items-center justify-between border-b border-[#E1E3DA] pb-3 mb-4">
+              <div>
+                <h3 className="text-base sm:text-lg font-bold font-title text-[#123B2A]">
+                  Articles de la commande ({orderPreviewProducts.length})
+                </h3>
+                <p className="text-xs text-[#6B726C]">
+                  Cliquez sur un article pour voir ses détails complets
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOrderPreviewProducts(null)}
+                aria-label="Fermer"
+                className="w-8 h-8 rounded-full bg-[#FAF9F5] border border-[#E1E3DA] flex items-center justify-center text-[#123B2A] cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              {orderPreviewProducts.map((prod) => (
+                <button
+                  key={prod.id}
+                  type="button"
+                  onClick={() => {
+                    setOrderPreviewProducts(null);
+                    setModalProduct(prod);
+                  }}
+                  className="w-full text-left p-3 rounded-xl border border-[#E1E3DA] bg-[#FAF9F5] hover:bg-[#EFEFE6] flex items-center gap-3 transition-colors cursor-pointer"
+                >
+                  <img
+                    src={prod.images[0] || `/api/products/${encodeURIComponent(prod.id)}/image.jpg`}
+                    alt={prod.name}
+                    className="w-16 h-16 rounded-lg object-cover bg-white border border-[#E1E3DA] shrink-0"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-bold text-[#1F5A40] uppercase">
+                      {prod.categoryLabel} • Réf {prod.ref}
+                    </p>
+                    <p className="text-sm font-bold text-[#123B2A] truncate">{prod.name}</p>
+                    <p className="text-xs font-extrabold text-[#123B2A] tabular-nums">
+                      {formatFCFA(prod.price)}
+                    </p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Footer */}
       <Footer
         onNavigate={handleTabChange}
+        categories={categories}
         logoUrl={mediaConfig.logoUrl}
         onOpenAdminAuth={() => {
           if (isAdminAuthenticated) {
@@ -1055,6 +1625,29 @@ export default function App() {
           }
         }}
         onSuccess={handleAdminAuthSuccess}
+      />
+
+      {/* Real-Time In-Site Order & Messaging Drawer */}
+      <OrderChatWidget
+        isOpen={isChatOpen}
+        onOpen={() => setIsChatOpen(true)}
+        onClose={() => {
+          setIsChatOpen(false);
+          setChatDraftOrder(null);
+        }}
+        draftOrder={chatDraftOrder}
+        onClearDraft={() => setChatDraftOrder(null)}
+        initialOpenTarget={chatOpenTarget}
+        onClearInitialTarget={() => setChatOpenTarget(null)}
+        onOrderCreated={(newOrder, clearCart) => {
+          setOrders((prev) => [newOrder, ...prev.filter((o) => o.id !== newOrder.id)]);
+          if (clearCart) {
+            setCart([]);
+          }
+        }}
+        products={products}
+        onOpenProduct={(prod) => setModalProduct(prod)}
+        onShowToast={showToast}
       />
     </div>
   );

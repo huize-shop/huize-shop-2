@@ -13,7 +13,18 @@ import {
   increment
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
-import { Product, Category, WhatsAppOrder, ClientLead, SiteMediaConfig } from './types.ts';
+import {
+  Product,
+  Category,
+  WhatsAppOrder,
+  ClientLead,
+  SiteMediaConfig,
+  TeamMember,
+  TeamMemberPublicProfile,
+  TeamMemberOrderSummary,
+  DailySiteStats,
+  CustomerReview
+} from './types.ts';
 import {
   INITIAL_PRODUCTS,
   INITIAL_CATEGORIES,
@@ -73,7 +84,6 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 export async function testConnection(): Promise<boolean> {
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
-    console.log('Firestore connected successfully.');
     return true;
   } catch (error) {
     if (error instanceof Error && error.message.includes('the client is offline')) {
@@ -81,6 +91,9 @@ export async function testConnection(): Promise<boolean> {
     }
     return false;
   }
+}
+if (typeof window !== 'undefined') {
+  void testConnection();
 }
 
 // Utility to recursively sanitize data objects and remove any undefined fields before writing to Firestore
@@ -358,10 +371,12 @@ export interface CachedCatalogResponse {
   source?: string;
 }
 
-export async function fetchCatalogFromServer(): Promise<CachedCatalogResponse | null> {
+export async function fetchCatalogFromServer(full: boolean = false): Promise<CachedCatalogResponse | null> {
   try {
-    const res = await fetch('/api/catalog', {
-      headers: { Accept: 'application/json' }
+    const url = full ? '/api/catalog?full=1' : '/api/catalog';
+    const res = await fetch(url, {
+      headers: { Accept: 'application/json' },
+      cache: 'no-store'
     });
     if (!res.ok) return null;
     const data = (await res.json()) as CachedCatalogResponse;
@@ -430,4 +445,280 @@ export async function fetchLeadsOnce(): Promise<ClientLead[] | null> {
   }
 }
 
+// --- TEAM MEMBERS & ATTRIBUTION ---
+export async function fetchTeamMembersOnce(): Promise<TeamMember[] | null> {
+  try {
+    const snapshot = await getDocs(collection(db, 'team_members'));
+    const list: TeamMember[] = [];
+    snapshot.forEach((d) => {
+      list.push(d.data() as TeamMember);
+    });
+    list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+    return list;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'team_members');
+    return null;
+  }
+}
 
+export async function saveTeamMemberToDb(member: TeamMember): Promise<void> {
+  try {
+    await setDoc(doc(db, 'team_members', member.id), sanitizeForFirestore(member));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `team_members/${member.id}`);
+    throw error;
+  }
+}
+
+export async function deleteTeamMemberFromDb(memberId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'team_members', memberId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `team_members/${memberId}`);
+    throw error;
+  }
+}
+
+export async function updateOrderReferralInDb(
+  orderId: string,
+  referredByCode: string,
+  referredByName: string
+): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'orders', orderId), {
+      referredByCode,
+      referredByName
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `orders/${orderId}`);
+    throw error;
+  }
+}
+
+export interface TeamLoginResponse {
+  success: boolean;
+  error?: string;
+  member?: TeamMemberPublicProfile;
+  ordersCount?: number;
+  salesCount?: number;
+  recentOrders?: TeamMemberOrderSummary[];
+}
+
+export async function loginTeamMemberOnServer(
+  code: string,
+  pin: string
+): Promise<TeamLoginResponse> {
+  try {
+    const res = await fetch('/api/team/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, pin })
+    });
+    const data = (await res.json()) as TeamLoginResponse;
+    return data;
+  } catch {
+    return {
+      success: false,
+      error: 'Erreur réseau lors de la connexion au serveur.'
+    };
+  }
+}
+
+export async function trackTeamClickOnServer(code: string): Promise<void> {
+  try {
+    await fetch('/api/team/track-click', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code })
+    });
+  } catch {
+    // Non-blocking tracking
+  }
+}
+
+export async function syncTeamServerCache(payload: {
+  teamMember?: TeamMember;
+  deletedTeamMemberId?: string;
+  order?: WhatsAppOrder;
+  deletedOrderId?: string;
+  forceRefresh?: boolean;
+}): Promise<void> {
+  try {
+    await fetch('/api/team/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+  } catch {
+    // Non-blocking cache sync
+  }
+}
+
+// --- DAILY VISITS & EVOLUTION ANALYTICS ---
+export async function trackStoreVisitOnServer(isAdmin: boolean = false): Promise<void> {
+  if (isAdmin) return;
+  try {
+    const todayKey = new Date().toISOString().slice(0, 10);
+    if (sessionStorage.getItem('huize_visit_pinged_v1') === todayKey) {
+      return;
+    }
+    const lastDay = localStorage.getItem('huize_last_visit_day_v1');
+    const isNewDailyVisit = lastDay !== todayKey;
+
+    sessionStorage.setItem('huize_visit_pinged_v1', todayKey);
+    localStorage.setItem('huize_last_visit_day_v1', todayKey);
+
+    await fetch('/api/analytics/visit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        isNewDailyVisit,
+        isAdmin: false
+      })
+    });
+  } catch {
+    // Non-blocking analytics
+  }
+}
+
+export async function trackOrderEventOnServer(channel: 'whatsapp' | 'site_chat'): Promise<void> {
+  try {
+    await fetch('/api/analytics/order-event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel })
+    });
+  } catch {
+    // Non-blocking analytics
+  }
+}
+
+export async function fetchAdminAnalyticsOverview(
+  forceRefresh: boolean = false
+): Promise<DailySiteStats[]> {
+  try {
+    const res = await fetch(
+      `/api/analytics/admin/overview${forceRefresh ? '?refresh=1' : ''}`,
+      {
+        headers: {
+          'x-admin-email': 'hugosazizegansonre@gmail.com'
+        },
+        cache: 'no-store'
+      }
+    );
+    if (!res.ok) return [];
+    const data = (await res.json()) as { success: boolean; dailyStats?: DailySiteStats[] };
+    return Array.isArray(data.dailyStats) ? data.dailyStats : [];
+  } catch {
+    return [];
+  }
+}
+
+// --- CUSTOMER REVIEWS (Avis Clients) ---
+export async function fetchCustomerReviews(forceRefresh: boolean = false): Promise<CustomerReview[]> {
+  try {
+    const res = await fetch(`/api/reviews${forceRefresh ? '?refresh=1' : ''}`, {
+      headers: { Accept: 'application/json' },
+      cache: 'no-store'
+    });
+    if (res.ok) {
+      const data = (await res.json()) as { success: boolean; reviews?: CustomerReview[] };
+      if (Array.isArray(data.reviews)) {
+        return data.reviews;
+      }
+    }
+  } catch {
+    // Fallback to direct Firestore read
+  }
+
+  try {
+    const snapshot = await getDocs(collection(db, 'reviews'));
+    const list: CustomerReview[] = [];
+    snapshot.forEach((d) => {
+      list.push(d.data() as CustomerReview);
+    });
+    list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+    return list;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'reviews');
+    return [];
+  }
+}
+
+export async function submitCustomerReview(payload: {
+  authorName: string;
+  city?: string;
+  rating: number;
+  comment: string;
+}): Promise<CustomerReview> {
+  const cleanName = payload.authorName.trim();
+  const cleanCity = payload.city?.trim() || '';
+  const cleanComment = payload.comment.trim();
+  const cleanRating = Math.min(5, Math.max(1, Math.round(payload.rating)));
+
+  try {
+    const res = await fetch('/api/reviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        authorName: cleanName,
+        city: cleanCity,
+        rating: cleanRating,
+        comment: cleanComment
+      })
+    });
+    const data = (await res.json()) as {
+      success: boolean;
+      review?: CustomerReview;
+      error?: string;
+    };
+    if (res.ok && data.success && data.review) {
+      return data.review;
+    }
+    throw new Error(data.error || 'Impossible de publier votre avis.');
+  } catch (err) {
+    if (err instanceof Error && !/Failed to fetch|NetworkError/i.test(err.message)) {
+      throw err;
+    }
+    // Network fallback: write directly to Firestore
+    const review: CustomerReview = sanitizeForFirestore({
+      id: `rev-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      authorName: cleanName,
+      ...(cleanCity ? { city: cleanCity } : {}),
+      rating: cleanRating,
+      comment: cleanComment,
+      createdAt: new Date().toISOString()
+    });
+    try {
+      await setDoc(doc(db, 'reviews', review.id), review);
+      return review;
+    } catch (fsErr) {
+      handleFirestoreError(fsErr, OperationType.CREATE, `reviews/${review.id}`);
+      throw new Error('Impossible de publier votre avis pour le moment.');
+    }
+  }
+}
+
+export async function deleteCustomerReview(reviewId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/reviews/${encodeURIComponent(reviewId)}`, {
+      method: 'DELETE',
+      headers: {
+        'x-admin-email': 'hugosazizegansonre@gmail.com'
+      }
+    });
+    if (res.ok) {
+      return true;
+    }
+  } catch {
+    // Fallback to direct Firestore delete
+  }
+
+  try {
+    await deleteDoc(doc(db, 'reviews', reviewId));
+    return true;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `reviews/${reviewId}`);
+    return false;
+  }
+}

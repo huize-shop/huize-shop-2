@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
 import { ShoppingBag, MessageCircle, Menu, X, Heart } from 'lucide-react';
+import { Category } from '../types.ts';
 import { WHATSAPP_DISPLAY, getDirectWhatsAppUrl } from '../utils/whatsapp.ts';
 import { PWAInstallButton } from './PWAInstallButton.tsx';
 
 interface NavbarProps {
   activeTab: string;
+  activeCategorySlug?: string;
   setActiveTab: (tab: string) => void;
+  categories: Category[];
   cartCount: number;
   onOpenCart: () => void;
   likedCount?: number;
@@ -17,14 +20,14 @@ interface NavbarProps {
 
 export const Navbar: React.FC<NavbarProps> = ({
   activeTab,
+  activeCategorySlug = 'all',
   setActiveTab,
+  categories,
   cartCount,
   onOpenCart,
   likedCount = 0,
   onOpenFavorites,
-  logoUrl,
-  isAdminMode,
-  setIsAdminMode
+  logoUrl
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -33,6 +36,11 @@ export const Navbar: React.FC<NavbarProps> = ({
     setMobileMenuOpen(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
+  // Keep desktop top bar crisp and single-line (max 3 featured categories)
+  const desktopCategories = categories.slice(0, 3);
+  const isBoutiqueAllActive =
+    activeTab === 'boutique' && (activeCategorySlug === 'all' || !activeCategorySlug);
 
   return (
     <header className="sticky top-0 z-40 bg-white border-b border-[#E1E3DA] shadow-xs">
@@ -68,7 +76,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         <nav className="hidden lg:flex items-center gap-1 xl:gap-2">
           <button
             onClick={() => handleNavClick('accueil')}
-            className={`px-3 py-1.5 text-sm font-medium transition-colors whitespace-nowrap cursor-pointer rounded-md ${
+            className={`px-3 py-1.5 text-sm font-medium transition-colors whitespace-nowrap shrink-0 cursor-pointer rounded-md ${
               activeTab === 'accueil'
                 ? 'text-[#123B2A] font-bold border-b-2 border-[#123B2A]'
                 : 'text-[#202720] hover:text-[#1F5A40] hover:bg-[#EFEFE6]'
@@ -78,44 +86,30 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
           <button
             onClick={() => handleNavClick('boutique')}
-            className={`px-3 py-1.5 text-sm font-medium transition-colors whitespace-nowrap cursor-pointer rounded-md ${
-              activeTab === 'boutique'
+            className={`px-3 py-1.5 text-sm font-medium transition-colors whitespace-nowrap shrink-0 cursor-pointer rounded-md ${
+              isBoutiqueAllActive
                 ? 'text-[#123B2A] font-bold border-b-2 border-[#123B2A]'
                 : 'text-[#202720] hover:text-[#1F5A40] hover:bg-[#EFEFE6]'
             }`}
           >
             Boutique
           </button>
-          <button
-            onClick={() => handleNavClick('baskets')}
-            className={`px-3 py-1.5 text-sm font-medium transition-colors whitespace-nowrap cursor-pointer rounded-md ${
-              activeTab === 'baskets'
-                ? 'text-[#123B2A] font-bold border-b-2 border-[#123B2A]'
-                : 'text-[#202720] hover:text-[#1F5A40] hover:bg-[#EFEFE6]'
-            }`}
-          >
-            Baskets
-          </button>
-          <button
-            onClick={() => handleNavClick('sandales')}
-            className={`px-3 py-1.5 text-sm font-medium transition-colors whitespace-nowrap cursor-pointer rounded-md ${
-              activeTab === 'sandales'
-                ? 'text-[#123B2A] font-bold border-b-2 border-[#123B2A]'
-                : 'text-[#202720] hover:text-[#1F5A40] hover:bg-[#EFEFE6]'
-            }`}
-          >
-            Sandales
-          </button>
-          <button
-            onClick={() => handleNavClick('vetements')}
-            className={`px-3 py-1.5 text-sm font-medium transition-colors whitespace-nowrap cursor-pointer rounded-md ${
-              activeTab === 'vetements'
-                ? 'text-[#123B2A] font-bold border-b-2 border-[#123B2A]'
-                : 'text-[#202720] hover:text-[#1F5A40] hover:bg-[#EFEFE6]'
-            }`}
-          >
-            Vêtements
-          </button>
+          {desktopCategories.map((cat) => {
+            const isActive = activeTab === 'boutique' && activeCategorySlug === cat.slug;
+            return (
+              <button
+                key={cat.id}
+                onClick={() => handleNavClick(`cat:${cat.slug}`)}
+                className={`px-3 py-1.5 text-sm font-medium transition-colors whitespace-nowrap shrink-0 cursor-pointer rounded-md ${
+                  isActive
+                    ? 'text-[#123B2A] font-bold border-b-2 border-[#123B2A]'
+                    : 'text-[#202720] hover:text-[#1F5A40] hover:bg-[#EFEFE6]'
+                }`}
+              >
+                {cat.name}
+              </button>
+            );
+          })}
           <button
             onClick={() => handleNavClick('apropos')}
             className={`px-3 py-1.5 text-sm font-medium transition-colors whitespace-nowrap shrink-0 cursor-pointer rounded-md ${
@@ -128,7 +122,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
           <button
             onClick={() => handleNavClick('contact')}
-            className={`px-3 py-1.5 text-sm font-medium transition-colors whitespace-nowrap cursor-pointer rounded-md ${
+            className={`px-3 py-1.5 text-sm font-medium transition-colors whitespace-nowrap shrink-0 cursor-pointer rounded-md ${
               activeTab === 'contact'
                 ? 'text-[#123B2A] font-bold border-b-2 border-[#123B2A]'
                 : 'text-[#202720] hover:text-[#1F5A40] hover:bg-[#EFEFE6]'
@@ -200,7 +194,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {/* Mobile Drawer Menu */}
       {mobileMenuOpen && (
-        <div className="lg:hidden bg-white border-b border-[#E1E3DA] px-4 py-4 animate-fade-in shadow-md">
+        <div className="lg:hidden bg-white border-b border-[#E1E3DA] px-4 py-4 animate-fade-in shadow-md max-h-[80vh] overflow-y-auto">
           <div className="flex flex-col gap-2">
             {onOpenFavorites && (
               <button
@@ -233,24 +227,15 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               Boutique complète
             </button>
-            <button
-              onClick={() => handleNavClick('baskets')}
-              className="text-left px-3 py-2 rounded-md font-medium text-sm text-[#202720] hover:bg-[#F8F7F2]"
-            >
-              👟 Baskets &amp; Sneakers
-            </button>
-            <button
-              onClick={() => handleNavClick('sandales')}
-              className="text-left px-3 py-2 rounded-md font-medium text-sm text-[#202720] hover:bg-[#F8F7F2]"
-            >
-              👡 Sandales &amp; Mules
-            </button>
-            <button
-              onClick={() => handleNavClick('vetements')}
-              className="text-left px-3 py-2 rounded-md font-medium text-sm text-[#202720] hover:bg-[#F8F7F2]"
-            >
-              👕 Vêtements &amp; T-shirts
-            </button>
+            {categories.map((cat) => (
+              <button
+                key={cat.id}
+                onClick={() => handleNavClick(`cat:${cat.slug}`)}
+                className="text-left px-3 py-2 rounded-md font-medium text-sm text-[#202720] hover:bg-[#F8F7F2]"
+              >
+                {cat.icon ? `${cat.icon} ` : ''}{cat.name}
+              </button>
+            ))}
             <button
               onClick={() => handleNavClick('apropos')}
               className="text-left px-3 py-2 rounded-md font-medium text-sm text-[#202720] hover:bg-[#F8F7F2]"

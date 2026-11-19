@@ -11,7 +11,7 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icon.svg'],
+        includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'push-sw.js'],
         manifest: {
           id: '/',
           name: 'HUIZE SHOP - Boutique Burkina Faso',
@@ -47,10 +47,30 @@ export default defineConfig(() => {
           ],
         },
         workbox: {
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,jpg,jpeg,webp,woff,woff2}'],
+          importScripts: ['/push-sw.js'],
+          skipWaiting: true,
+          clientsClaim: true,
+          cleanupOutdatedCaches: true,
+          globPatterns: ['**/*.{js,css,ico,png,svg,jpg,jpeg,webp,woff,woff2}'],
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+          navigateFallback: null,
           navigateFallbackDenylist: [/^\/api/],
           runtimeCaching: [
+            {
+              urlPattern: ({ request }) => request.mode === 'navigate',
+              handler: 'NetworkFirst',
+              options: {
+                cacheName: 'huize-pages-cache',
+                networkTimeoutSeconds: 3,
+                expiration: {
+                  maxEntries: 5,
+                  maxAgeSeconds: 60 * 60 * 24,
+                },
+                cacheableResponse: {
+                  statuses: [200],
+                },
+              },
+            },
             {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
               handler: 'CacheFirst',
@@ -80,7 +100,7 @@ export default defineConfig(() => {
               },
             },
             {
-              urlPattern: /\/api\/catalog$/i,
+              urlPattern: /\/api\/catalog/i,
               handler: 'NetworkFirst',
               options: {
                 cacheName: 'huize-catalog-api-cache',
@@ -94,11 +114,24 @@ export default defineConfig(() => {
                 },
               },
             },
+            {
+              urlPattern: /\/api\/(products|media|categories)\//i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'huize-images-cache',
+                expiration: {
+                  maxEntries: 200,
+                  maxAgeSeconds: 60 * 60 * 24 * 30,
+                },
+                cacheableResponse: {
+                  statuses: [200],
+                },
+              },
+            },
           ],
         },
         devOptions: {
-          enabled: true,
-          type: 'module',
+          enabled: false,
         },
       }),
     ],

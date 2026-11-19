@@ -32,26 +32,92 @@
         "slug": { "type": "string", "description": "Identifiant slug d'URL" },
         "icon": { "type": "string", "description": "Icône ou émoji" },
         "badge": { "type": "string", "description": "Tag de mise en avant" },
+        "subtitle": { "type": "string", "description": "Sous-titre court affiché sur l'accueil" },
+        "image": { "type": "string", "description": "Photo circulaire optionnelle de la catégorie" },
         "itemCount": { "type": "number", "description": "Nombre de produits" }
       },
       "required": ["id", "name", "slug"]
     },
     "WhatsAppOrder": {
       "title": "WhatsAppOrder",
-      "description": "Commande passée et synchronisée avec WhatsApp",
+      "description": "Commande passée via WhatsApp ou via la messagerie intégrée du site",
       "type": "object",
       "properties": {
         "id": { "type": "string", "description": "Numéro de commande" },
         "customerName": { "type": "string", "description": "Nom du client" },
         "phone": { "type": "string", "description": "Téléphone WhatsApp" },
         "itemsSummary": { "type": "string", "description": "Résumé des articles" },
+        "items": { "type": "array", "description": "Liste des articles commandés avec photo, quantité et prix" },
         "total": { "type": "number", "description": "Montant total en F CFA" },
         "status": { "type": "string", "description": "Statut de livraison/paiement" },
         "statusLabel": { "type": "string", "description": "Libellé du statut" },
         "date": { "type": "string", "description": "Date de la commande" },
-        "city": { "type": "string", "description": "Lieu de livraison à Ouaga ou Province" }
+        "city": { "type": "string", "description": "Lieu de livraison à Ouaga ou Province" },
+        "referredByCode": { "type": "string", "description": "Code du membre d'équipe ou conseiller ayant recommandé la commande" },
+        "referredByName": { "type": "string", "description": "Nom du membre d'équipe ayant recommandé la commande" },
+        "channel": { "type": "string", "description": "Canal de commande (whatsapp ou site_chat)" },
+        "createdAt": { "type": "string", "description": "Horodatage ISO de création de la commande" }
       },
       "required": ["id", "customerName", "total", "status"]
+    },
+    "OrderThread": {
+      "title": "OrderThread",
+      "description": "Fil de discussion et commande directe intégrée sur le site",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Identifiant de commande (ex: CMD-1085)", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "orderId": { "type": "string", "description": "Numéro de commande associé", "maxLength": 64 },
+        "accessToken": { "type": "string", "description": "Jeton secret client pour accéder au fil privé", "maxLength": 128 },
+        "customerName": { "type": "string", "description": "Nom complet du client", "maxLength": 120 },
+        "customerPhone": { "type": "string", "description": "Numéro WhatsApp ou téléphone du client", "maxLength": 40 },
+        "customerCity": { "type": "string", "description": "Ville et quartier de livraison", "maxLength": 160 },
+        "paymentMethod": { "type": "string", "description": "Mode de règlement souhaité", "maxLength": 80 },
+        "itemsSummary": { "type": "string", "description": "Résumé textuel des articles", "maxLength": 500 },
+        "items": { "type": "array", "description": "Articles commandés avec miniatures" },
+        "total": { "type": "number", "description": "Montant total en F CFA" },
+        "status": { "type": "string", "description": "Statut de la commande", "enum": ["discussion", "pending", "paid", "delivered"] },
+        "statusLabel": { "type": "string", "description": "Libellé du statut", "maxLength": 60 },
+        "createdAt": { "type": "string", "description": "Date ISO de création", "maxLength": 64 },
+        "updatedAt": { "type": "string", "description": "Date ISO de dernière activité", "maxLength": 64 },
+        "lastMessageText": { "type": "string", "description": "Aperçu du dernier message", "maxLength": 300 },
+        "lastMessageSender": { "type": "string", "description": "Expéditeur du dernier message", "enum": ["customer", "merchant", "system"] },
+        "unreadForCustomer": { "type": "number", "description": "Messages non lus côté client" },
+        "unreadForAdmin": { "type": "number", "description": "Messages non lus côté commerçant" },
+        "referredByCode": { "type": "string", "description": "Code conseiller / équipe", "maxLength": 40 },
+        "referredByName": { "type": "string", "description": "Nom du membre d'équipe", "maxLength": 100 }
+      },
+      "required": ["id", "orderId", "accessToken", "customerName", "customerPhone", "customerCity", "total", "status", "createdAt", "updatedAt"]
+    },
+    "OrderChatMessage": {
+      "title": "OrderChatMessage",
+      "description": "Message individuel dans une discussion de commande",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Identifiant du message", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "threadId": { "type": "string", "description": "Identifiant de la conversation parente", "maxLength": 64 },
+        "sender": { "type": "string", "description": "Rôle de l'expéditeur", "enum": ["customer", "merchant", "system"] },
+        "senderName": { "type": "string", "description": "Nom affiché de l'expéditeur", "maxLength": 120 },
+        "text": { "type": "string", "description": "Contenu texte du message", "maxLength": 1000 },
+        "createdAt": { "type": "string", "description": "Horodatage ISO", "maxLength": 64 },
+        "attachedProduct": { "type": "object", "description": "Fiche produit légère jointe au message" }
+      },
+      "required": ["id", "threadId", "sender", "senderName", "text", "createdAt"]
+    },
+    "TeamMember": {
+      "title": "TeamMember",
+      "description": "Membre de l'équipe de partage et suivi des clics, commandes et ventes",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Identifiant unique du membre" },
+        "name": { "type": "string", "description": "Nom complet du membre" },
+        "code": { "type": "string", "description": "Code de partage personnel en majuscules" },
+        "pin": { "type": "string", "description": "Code PIN personnel (4 à 6 chiffres)" },
+        "phone": { "type": "string", "description": "Numéro WhatsApp optionnel" },
+        "active": { "type": "boolean", "description": "Compte actif pour le partage et la connexion" },
+        "clicks": { "type": "number", "description": "Nombre de clics suivis via le lien personnel" },
+        "createdAt": { "type": "string", "description": "Date de création du compte membre" }
+      },
+      "required": ["id", "name", "code", "pin", "active", "clicks"]
     },
     "ClientLead": {
       "title": "ClientLead",
@@ -80,6 +146,62 @@
         "heroSubtitle": { "type": "string", "description": "Sous-titre descriptif de l'Hero" },
         "carouselSlides": { "type": "array", "description": "Liste des bannières et photos du carrousel d'accueil" }
       }
+    },
+    "DailyStat": {
+      "title": "DailyStat",
+      "description": "Statistiques journalières de visites et d'activité sur la boutique (1 document par jour YYYY-MM-DD)",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "description": "Date au format YYYY-MM-DD", "maxLength": 10, "pattern": "^20[0-9]{2}-[0-9]{2}-[0-9]{2}$" },
+        "visits": { "type": "number", "description": "Nombre de visiteurs uniques sur la journée" },
+        "pageViews": { "type": "number", "description": "Nombre total de chargements / pages vues" },
+        "whatsappClicks": { "type": "number", "description": "Nombre de commandes/clics WhatsApp sur la journée" },
+        "siteChatOrders": { "type": "number", "description": "Nombre de commandes via la messagerie interne sur la journée" },
+        "updatedAt": { "type": "string", "description": "Dernière mise à jour ISO", "maxLength": 64 }
+      },
+      "required": ["date", "visits", "pageViews", "updatedAt"]
+    },
+    "CustomerReview": {
+      "title": "CustomerReview",
+      "description": "Avis et note laissés par un client sur la page d'accueil de la boutique",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Identifiant unique de l'avis", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorName": { "type": "string", "description": "Nom ou prénom du client", "minLength": 2, "maxLength": 80 },
+        "city": { "type": "string", "description": "Quartier ou ville optionnel", "maxLength": 80 },
+        "rating": { "type": "number", "description": "Note de 1 à 5 étoiles" },
+        "comment": { "type": "string", "description": "Message d'avis client", "minLength": 5, "maxLength": 600 },
+        "createdAt": { "type": "string", "description": "Date ISO de publication", "maxLength": 64 }
+      },
+      "required": ["id", "authorName", "rating", "comment", "createdAt"]
+    },
+    "PushConfig": {
+      "title": "PushConfig",
+      "description": "Paire de clés VAPID persistante pour l'envoi des notifications Web Push",
+      "type": "object",
+      "properties": {
+        "publicKey": { "type": "string", "description": "Clé publique VAPID", "maxLength": 256 },
+        "privateKey": { "type": "string", "description": "Clé privée VAPID", "maxLength": 256 },
+        "subject": { "type": "string", "description": "Sujet VAPID (mailto:...)", "maxLength": 160 },
+        "createdAt": { "type": "string", "description": "Date ISO de création", "maxLength": 64 }
+      },
+      "required": ["publicKey", "privateKey", "subject", "createdAt"]
+    },
+    "PushSubscriptionRecord": {
+      "title": "PushSubscriptionRecord",
+      "description": "Abonnement Web Push d'un appareil client ou commerçant",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Identifiant unique dérivé de l'endpoint", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "role": { "type": "string", "description": "Rôle de l'appareil abonné", "enum": ["customer", "admin"] },
+        "endpoint": { "type": "string", "description": "URL Push du navigateur", "maxLength": 1000 },
+        "keys": { "type": "object", "description": "Clés de chiffrement Web Push (p256dh, auth)" },
+        "orderIds": { "type": "array", "description": "Numéros de commandes suivies par cet appareil" },
+        "userAgent": { "type": "string", "description": "Libellé court de l'appareil", "maxLength": 160 },
+        "createdAt": { "type": "string", "description": "Date ISO de création", "maxLength": 64 },
+        "updatedAt": { "type": "string", "description": "Date ISO de mise à jour", "maxLength": 64 }
+      },
+      "required": ["id", "role", "endpoint", "keys", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -93,7 +215,19 @@
     },
     "/orders/{orderId}": {
       "schema": { "$ref": "#/entities/WhatsAppOrder" },
-      "description": "Historique des commandes et paniers validés via WhatsApp"
+      "description": "Historique des commandes et paniers validés via WhatsApp ou messagerie du site"
+    },
+    "/order_threads/{threadId}": {
+      "schema": { "$ref": "#/entities/OrderThread" },
+      "description": "Fils de discussion et suivi des commandes directes sur le site"
+    },
+    "/order_threads/{threadId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/OrderChatMessage" },
+      "description": "Messages échangés entre client et commerçant pour une commande"
+    },
+    "/team_members/{memberId}": {
+      "schema": { "$ref": "#/entities/TeamMember" },
+      "description": "Membres d'équipe avec code personnel, PIN et compteur de clics"
     },
     "/leads/{leadId}": {
       "schema": { "$ref": "#/entities/ClientLead" },
@@ -102,6 +236,22 @@
     "/settings/{settingId}": {
       "schema": { "$ref": "#/entities/SiteSettings" },
       "description": "Configuration multimédia de l'accueil, photo hero et diapositives du carrousel"
+    },
+    "/daily_stats/{dateId}": {
+      "schema": { "$ref": "#/entities/DailyStat" },
+      "description": "Compteurs journaliers de visites, pages vues et commandes"
+    },
+    "/reviews/{reviewId}": {
+      "schema": { "$ref": "#/entities/CustomerReview" },
+      "description": "Avis et notes clients affichés dynamiquement sur la page d'accueil"
+    },
+    "/push_config/{configId}": {
+      "schema": { "$ref": "#/entities/PushConfig" },
+      "description": "Clés VAPID Web Push persistantes"
+    },
+    "/push_subscriptions/{subId}": {
+      "schema": { "$ref": "#/entities/PushSubscriptionRecord" },
+      "description": "Abonnements Web Push des téléphones et navigateurs clients et commerçants"
     }
   }
 }

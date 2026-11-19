@@ -1,7 +1,12 @@
-import React, { useState } from 'react';
-import { CartItem } from '../types.ts';
-import { formatFCFA, getCartWhatsAppUrl } from '../utils/whatsapp.ts';
-import { Trash2, MessageCircle, ArrowLeft, ShoppingBag, ShieldCheck, Truck } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { CartItem, OrderItemSnapshot } from '../types.ts';
+import {
+  formatFCFA,
+  getCartWhatsAppUrl,
+  getCompactProductThumbnail,
+  normalizeReferralCode
+} from '../utils/whatsapp.ts';
+import { Trash2, MessageCircle, MessageSquare, ArrowLeft, ShoppingBag, ShieldCheck, Truck } from 'lucide-react';
 
 interface CartViewProps {
   cart: CartItem[];
@@ -9,13 +14,25 @@ interface CartViewProps {
   onRemoveItem: (index: number) => void;
   onClearCart: () => void;
   onContinueShopping: () => void;
+  initialReferralCode?: string;
   onOrderPlaced?: (order: {
     customerName: string;
     customerPhone: string;
     customerCity: string;
     itemsSummary: string;
+    items: OrderItemSnapshot[];
     total: number;
     paymentMethod: string;
+    referralCode?: string;
+  }) => void;
+  onStartSiteOrder?: (draft: {
+    customerName?: string;
+    customerPhone?: string;
+    customerCity?: string;
+    paymentMethod?: string;
+    referralCode?: string;
+    items: OrderItemSnapshot[];
+    clearCartOnSuccess: boolean;
   }) => void;
 }
 
@@ -25,21 +42,32 @@ export const CartView: React.FC<CartViewProps> = ({
   onRemoveItem,
   onClearCart,
   onContinueShopping,
-  onOrderPlaced
+  initialReferralCode = '',
+  onOrderPlaced,
+  onStartSiteOrder
 }) => {
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [neighborhood, setNeighborhood] = useState('Ouagadougou');
   const [paymentMethod, setPaymentMethod] = useState('Orange Money / Moov Money');
+  const [advisorCode, setAdvisorCode] = useState(() => normalizeReferralCode(initialReferralCode));
+
+  useEffect(() => {
+    if (initialReferralCode) {
+      setAdvisorCode((prev) => prev || normalizeReferralCode(initialReferralCode));
+    }
+  }, [initialReferralCode]);
 
   const total = cart.reduce((acc, item) => acc + item.product.price * item.quantity, 0);
   const totalItemsCount = cart.reduce((acc, item) => acc + item.quantity, 0);
+  const cleanAdvisorCode = normalizeReferralCode(advisorCode);
 
   const whatsAppCheckoutUrl = getCartWhatsAppUrl(cart, {
     name: customerName,
     phone: customerPhone,
     neighborhood,
-    paymentMethod
+    paymentMethod,
+    referralCode: cleanAdvisorCode || undefined
   });
 
   if (cart.length === 0) {
@@ -223,6 +251,19 @@ export const CartView: React.FC<CartViewProps> = ({
                   <option value="Paiement en boutique">Paiement en boutique Ouaga</option>
                 </select>
               </div>
+
+              <div className="sm:col-span-2">
+                <label className="block text-[#123B2A] font-semibold mb-1">
+                  Code conseiller / équipe (optionnel)
+                </label>
+                <input
+                  type="text"
+                  value={advisorCode}
+                  onChange={(e) => setAdvisorCode(e.target.value.toUpperCase())}
+                  placeholder="Ex : MOUSA — si un membre vous a recommandé la boutique"
+                  className="w-full p-2.5 rounded-lg border border-[#E1E3DA] text-xs uppercase font-mono focus:outline-[#1F5A40]"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -263,6 +304,37 @@ export const CartView: React.FC<CartViewProps> = ({
               et expéditions sécurisées vers Bobo-Dioulasso, Koudougou, Fada, etc.
             </p>
 
+            {/* Direct In-Site Order & Messaging Button */}
+            {onStartSiteOrder && (
+              <button
+                type="button"
+                onClick={() => {
+                  const items: OrderItemSnapshot[] = cart.map((i) => ({
+                    productId: i.product.id,
+                    name: i.product.name,
+                    ref: i.product.ref,
+                    image: getCompactProductThumbnail(i.product),
+                    size: i.selectedSize || 'Standard',
+                    quantity: i.quantity,
+                    price: i.product.price
+                  }));
+                  onStartSiteOrder({
+                    customerName: customerName.trim() || undefined,
+                    customerPhone: customerPhone.trim() || undefined,
+                    customerCity: neighborhood.trim() || 'Ouagadougou',
+                    paymentMethod,
+                    referralCode: cleanAdvisorCode || undefined,
+                    items,
+                    clearCartOnSuccess: true
+                  });
+                }}
+                className="w-full inline-flex items-center justify-center gap-2.5 py-3.5 px-6 rounded-full bg-[#123B2A] hover:bg-[#1F5A40] text-white font-extrabold text-sm sm:text-base shadow-md transition-all active:scale-98 cursor-pointer"
+              >
+                <MessageSquare className="w-5 h-5 text-[#D8F36A]" />
+                <span>Commander &amp; Discuter sur le site</span>
+              </button>
+            )}
+
             {/* Big WhatsApp Checkout Button */}
             <a
               href={whatsAppCheckoutUrl}
@@ -271,20 +343,31 @@ export const CartView: React.FC<CartViewProps> = ({
               onClick={() => {
                 if (onOrderPlaced) {
                   const summary = cart.map((i) => `${i.quantity}x ${i.product.name} (Taille ${i.selectedSize || 'Std'})`).join(', ');
+                  const items: OrderItemSnapshot[] = cart.map((i) => ({
+                    productId: i.product.id,
+                    name: i.product.name,
+                    ref: i.product.ref,
+                    image: getCompactProductThumbnail(i.product),
+                    size: i.selectedSize || 'Standard',
+                    quantity: i.quantity,
+                    price: i.product.price
+                  }));
                   onOrderPlaced({
                     customerName: customerName.trim() || 'Client WhatsApp',
                     customerPhone: customerPhone.trim() || 'Non précisé',
                     customerCity: neighborhood.trim() || 'Ouagadougou',
                     itemsSummary: summary,
+                    items,
                     total,
-                    paymentMethod
+                    paymentMethod,
+                    referralCode: cleanAdvisorCode || undefined
                   });
                 }
               }}
-              className="w-full inline-flex items-center justify-center gap-2.5 py-4 px-6 rounded-full bg-[#25D366] hover:bg-[#20ba5a] text-white font-extrabold text-base shadow-lg transition-all active:scale-98"
+              className="w-full inline-flex items-center justify-center gap-2.5 py-3.5 px-6 rounded-full bg-[#25D366] hover:bg-[#20ba5a] text-white font-extrabold text-sm sm:text-base shadow-lg transition-all active:scale-98"
             >
               <MessageCircle className="w-5 h-5 fill-white text-[#25D366]" />
-              <span>💬 Commander sur WhatsApp</span>
+              <span>Commander sur WhatsApp</span>
             </a>
 
             <button

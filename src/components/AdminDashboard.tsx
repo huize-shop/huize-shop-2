@@ -1,13 +1,61 @@
-import React, { useState } from 'react';
-import { Product, Category, WhatsAppOrder, ClientLead, SiteMediaConfig, CarouselSlide } from '../types.ts';
-import { INITIAL_CAROUSEL_SLIDES } from '../data/initialData.ts';
-import { formatFCFA, WHATSAPP_DISPLAY } from '../utils/whatsapp.ts';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import {
+  Product,
+  Category,
+  WhatsAppOrder,
+  ClientLead,
+  SiteMediaConfig,
+  CarouselSlide,
+  TeamMember,
+  OrderThread,
+  OrderChatMessage,
+  OrderItemSnapshot,
+  DailySiteStats,
+  CustomerReview
+} from '../types.ts';
+import {
+  INITIAL_CAROUSEL_SLIDES,
+  HERO_PROMO_DELIVERY_IMG,
+  HERO_PROMO_COD_IMG
+} from '../data/initialData.ts';
+import {
+  formatFCFA,
+  WHATSAPP_DISPLAY,
+  getBoutiqueShareUrl,
+  getAppOrigin,
+  normalizeReferralCode
+} from '../utils/whatsapp.ts';
+import {
+  fetchAdminAnalyticsOverview,
+  fetchCustomerReviews,
+  deleteCustomerReview
+} from '../firebase.ts';
+import { AdminAnalyticsPanel } from './AdminAnalyticsPanel.tsx';
+import { AdminChatInbox } from './AdminChatInbox.tsx';
+import {
+  AUTHORIZED_ADMIN_EMAIL,
+  fetchAdminChatThread,
+  fetchAdminChatThreads,
+  getChatWsUrl,
+  markAdminThreadRead,
+  playChatNotificationChime,
+  sendAdminChatMessage,
+  updateAdminThreadStatus
+} from '../utils/chatClient.ts';
+import {
+  sendTestPushNotification,
+  showInstantBrowserNotification,
+  subscribeDeviceToWebPush,
+  syncAdminPushIfSubscribed,
+  unsubscribeDeviceFromWebPush
+} from '../utils/pushClient.ts';
 import {
   LayoutDashboard,
   Package,
   FolderTree,
   Users,
   MessageCircle,
+  MessageSquare,
   ExternalLink,
   Plus,
   Search,
@@ -25,7 +73,15 @@ import {
   Sparkles,
   ArrowUp,
   ArrowDown,
-  RefreshCw
+  RefreshCw,
+  Share2,
+  Copy,
+  Eye,
+  EyeOff,
+  UserPlus,
+  Star,
+  Bell,
+  BellRing
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -33,17 +89,31 @@ interface AdminDashboardProps {
   categories: Category[];
   orders: WhatsAppOrder[];
   leads: ClientLead[];
+  teamMembers?: TeamMember[];
   mediaConfig: SiteMediaConfig;
   onUpdateMediaConfig: (config: SiteMediaConfig) => void;
   onAddProduct: (product: Omit<Product, 'id'>) => void;
   onUpdateProduct: (product: Product) => void;
   onDeleteProduct: (id: string) => void;
-  onAddCategory: (name: string, icon: string) => void;
+  onAddCategory: (input: {
+    name: string;
+    icon: string;
+    badge?: string;
+    subtitle?: string;
+    image?: string;
+  }) => void;
+  onUpdateCategory: (category: Category) => void;
   onDeleteCategory: (id: string) => void;
   onUpdateOrderStatus: (orderId: string, status: WhatsAppOrder['status']) => void;
+  onAssignOrderReferral?: (orderId: string, referralCode: string) => Promise<void> | void;
   onDeleteOrder?: (orderId: string) => void;
   onDeleteLead?: (leadId: string) => void;
+  onAddTeamMember?: (member: { name: string; code: string; pin: string; phone?: string }) => Promise<void> | void;
+  onUpdateTeamMember?: (member: TeamMember) => Promise<void> | void;
+  onDeleteTeamMember?: (memberId: string) => Promise<void> | void;
   onRefreshAdminData?: () => Promise<void> | void;
+  onSyncOrderStatus?: (orderId: string, status: WhatsAppOrder['status']) => void;
+  onNewSiteOrderReceived?: (order: WhatsAppOrder) => void;
   onExitAdmin: () => void;
   onLogout?: () => void;
 }
@@ -53,26 +123,415 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   categories,
   orders,
   leads,
+  teamMembers = [],
   mediaConfig,
   onUpdateMediaConfig,
   onAddProduct,
   onUpdateProduct,
   onDeleteProduct,
   onAddCategory,
+  onUpdateCategory,
   onDeleteCategory,
   onUpdateOrderStatus,
+  onAssignOrderReferral,
   onDeleteOrder,
   onDeleteLead,
+  onAddTeamMember,
+  onUpdateTeamMember,
+  onDeleteTeamMember,
   onRefreshAdminData,
+  onSyncOrderStatus,
+  onNewSiteOrderReceived,
   onExitAdmin,
   onLogout
 }) => {
-  const [activeSection, setActiveSection] = useState<'dashboard' | 'catalogue' | 'categories' | 'medias' | 'clients' | 'commandes'>('dashboard');
+  const [activeSection, setActiveSection] = useState<
+    'dashboard' | 'statistiques' | 'catalogue' | 'categories' | 'medias' | 'clients' | 'commandes' | 'messagerie' | 'equipe'
+  >('dashboard');
   const [isRefreshingData, setIsRefreshingData] = useState(false);
+
+  // Daily Visits & Evolution Analytics State
+  const [dailyStats, setDailyStats] = useState<DailySiteStats[]>([]);
+  const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(false);
+
+  const refreshAnalytics = useCallback(async (force = false) => {
+    setIsLoadingAnalytics(true);
+    try {
+      const stats = await fetchAdminAnalyticsOverview(force);
+      setDailyStats(stats);
+    } finally {
+      setIsLoadingAnalytics(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshAnalytics(false);
+  }, [refreshAnalytics]);
+
+  // Customer Reviews moderation state
+  const [customerReviews, setCustomerReviews] = useState<CustomerReview[]>([]);
+  const [isLoadingReviews, setIsLoadingReviews] = useState(false);
+
+  const refreshCustomerReviews = useCallback(async (force = false) => {
+    setIsLoadingReviews(true);
+    try {
+      const list = await fetchCustomerReviews(force);
+      setCustomerReviews(list);
+    } finally {
+      setIsLoadingReviews(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshCustomerReviews(false);
+  }, [refreshCustomerReviews]);
+
+  const handleDeleteCustomerReview = async (review: CustomerReview) => {
+    if (!confirm(`Supprimer l'avis de "${review.authorName}" ?`)) return;
+    const ok = await deleteCustomerReview(review.id);
+    if (ok) {
+      setCustomerReviews((prev) => prev.filter((r) => r.id !== review.id));
+    }
+  };
+
+  // Real-time In-Site Order Messaging State
+  const [chatThreads, setChatThreads] = useState<OrderThread[]>([]);
+  const [selectedChatThreadId, setSelectedChatThreadId] = useState<string | null>(null);
+  const [chatMessages, setChatMessages] = useState<OrderChatMessage[]>([]);
+  const [isLoadingChatMessages, setIsLoadingChatMessages] = useState(false);
+  const [chatWsConnected, setChatWsConnected] = useState(false);
+  const [adminPushEnabled, setAdminPushEnabled] = useState(false);
+  const [isTogglingPush, setIsTogglingPush] = useState(false);
+  const [isTestingPush, setIsTestingPush] = useState(false);
+  const [pushFeedback, setPushFeedback] = useState<string | null>(null);
+  const [liveChatAlert, setLiveChatAlert] = useState<{
+    threadId: string;
+    title: string;
+    body: string;
+  } | null>(null);
+  const selectedChatIdRef = useRef<string | null>(null);
+  selectedChatIdRef.current = selectedChatThreadId;
+  const activeSectionRef = useRef(activeSection);
+  activeSectionRef.current = activeSection;
+
+  const refreshChatThreads = useCallback(async (force = false) => {
+    const list = await fetchAdminChatThreads(force);
+    setChatThreads(list);
+  }, []);
+
+  useEffect(() => {
+    refreshChatThreads(false);
+  }, [refreshChatThreads]);
+
+  useEffect(() => {
+    void syncAdminPushIfSubscribed().then((active) => {
+      if (active) setAdminPushEnabled(true);
+    });
+  }, []);
+
+  const handleToggleAdminPush = useCallback(async () => {
+    setIsTogglingPush(true);
+    setPushFeedback(null);
+    if (adminPushEnabled) {
+      await unsubscribeDeviceFromWebPush('admin');
+      setAdminPushEnabled(false);
+      setPushFeedback('Alertes désactivées sur cet appareil.');
+      setIsTogglingPush(false);
+      return;
+    }
+
+    const res = await subscribeDeviceToWebPush({ role: 'admin' });
+    setIsTogglingPush(false);
+    if (res.success) {
+      setAdminPushEnabled(true);
+      setPushFeedback('Alertes activées ! Vous serez averti sur téléphone et PC.');
+      playChatNotificationChime();
+    } else {
+      setPushFeedback(res.error || "Impossible d'activer les notifications.");
+    }
+  }, [adminPushEnabled]);
+
+  const handleTestAdminPush = useCallback(async () => {
+    setIsTestingPush(true);
+    setPushFeedback(null);
+    const res = await sendTestPushNotification('admin');
+    setIsTestingPush(false);
+    if (res.success) {
+      setPushFeedback('Notification de test envoyée ! Vérifiez votre écran / téléphone.');
+    } else {
+      setPushFeedback(res.error || 'Échec du test de notification.');
+    }
+  }, []);
+
+  const handleSelectChatThread = useCallback(async (threadId: string | null) => {
+    setSelectedChatThreadId(threadId);
+    if (!threadId) {
+      setChatMessages([]);
+      return;
+    }
+    setIsLoadingChatMessages(true);
+    const res = await fetchAdminChatThread(threadId);
+    setIsLoadingChatMessages(false);
+    if (res.success) {
+      setChatMessages(res.messages || []);
+      if (res.thread && (res.thread.unreadForAdmin || 0) > 0) {
+        markAdminThreadRead(threadId);
+        setChatThreads((prev) =>
+          prev.map((t) => (t.id === threadId ? { ...t, unreadForAdmin: 0 } : t))
+        );
+      }
+    }
+  }, []);
+
+  // Open target conversation directly when arriving from a Push notification (?chat=CMD-XXXX)
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const chatParam = params.get('chat');
+      if (chatParam) {
+        setActiveSection('messagerie');
+        void handleSelectChatThread(chatParam.trim());
+        params.delete('chat');
+        const nextSearch = params.toString();
+        const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash}`;
+        window.history.replaceState(null, '', nextUrl);
+      }
+    } catch {
+      // Ignore URL parse error
+    }
+  }, [handleSelectChatThread]);
+
+  useEffect(() => {
+    let closedByEffect = false;
+    let ws: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const connectAdminWs = () => {
+      if (closedByEffect) return;
+      const wsUrl = getChatWsUrl();
+      if (!wsUrl) return;
+      try {
+        ws = new WebSocket(wsUrl);
+        ws.onopen = () => {
+          ws?.send(
+            JSON.stringify({
+              type: 'auth:admin',
+              adminEmail: AUTHORIZED_ADMIN_EMAIL
+            })
+          );
+        };
+        ws.onmessage = (evt) => {
+          try {
+            const payload = JSON.parse(evt.data);
+            if (payload.type === 'auth:ok') {
+              setChatWsConnected(true);
+              refreshChatThreads(false);
+            } else if (payload.type === 'chat:thread_created' && payload.thread) {
+              const incomingThread = payload.thread as OrderThread;
+              setChatThreads((prev) => [
+                incomingThread,
+                ...prev.filter((t) => t.id !== incomingThread.id)
+              ]);
+              playChatNotificationChime();
+              if (activeSectionRef.current !== 'messagerie') {
+                setLiveChatAlert({
+                  threadId: incomingThread.orderId,
+                  title: `Nouvelle commande ${incomingThread.orderId}`,
+                  body: `${incomingThread.customerName} · ${incomingThread.itemsSummary}`
+                });
+              }
+              if (document.hidden || activeSectionRef.current !== 'messagerie') {
+                void showInstantBrowserNotification({
+                  title: `Nouvelle commande ${incomingThread.orderId}`,
+                  body: `${incomingThread.customerName} (${incomingThread.customerCity}) · ${incomingThread.itemsSummary}`,
+                  url: `/?admin=1&chat=${encodeURIComponent(incomingThread.orderId)}#admin`,
+                  tag: `huize-admin-${incomingThread.orderId}`
+                });
+              }
+              if (onNewSiteOrderReceived) {
+                onNewSiteOrderReceived({
+                  id: incomingThread.orderId,
+                  customerName: incomingThread.customerName,
+                  phone: incomingThread.customerPhone,
+                  city: incomingThread.customerCity,
+                  customerPhone: incomingThread.customerPhone,
+                  customerCity: incomingThread.customerCity,
+                  itemsSummary: incomingThread.itemsSummary,
+                  items: incomingThread.items,
+                  total: incomingThread.total,
+                  date: new Date(incomingThread.createdAt).toLocaleDateString('fr-FR', {
+                    day: '2-digit',
+                    month: 'short',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  }),
+                  status: incomingThread.status,
+                  statusLabel: incomingThread.statusLabel,
+                  paymentMethod: incomingThread.paymentMethod,
+                  channel: 'site_chat',
+                  ...(incomingThread.referredByCode
+                    ? { referredByCode: incomingThread.referredByCode }
+                    : {}),
+                  ...(incomingThread.referredByName
+                    ? { referredByName: incomingThread.referredByName }
+                    : {})
+                });
+              }
+            } else if (payload.type === 'chat:message' && payload.message) {
+              const msg = payload.message as OrderChatMessage;
+              if (payload.thread) {
+                const updatedT = payload.thread as OrderThread;
+                setChatThreads((prev) => {
+                  const exists = prev.some((t) => t.id === updatedT.id);
+                  const next = exists
+                    ? prev.map((t) => (t.id === updatedT.id ? updatedT : t))
+                    : [updatedT, ...prev];
+                  return [...next].sort((a, b) =>
+                    (b.updatedAt || '').localeCompare(a.updatedAt || '')
+                  );
+                });
+              }
+
+              if (selectedChatIdRef.current === msg.threadId) {
+                setChatMessages((prev) =>
+                  prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]
+                );
+                if (activeSectionRef.current === 'messagerie' && msg.sender === 'customer') {
+                  markAdminThreadRead(msg.threadId);
+                  setChatThreads((prev) =>
+                    prev.map((t) => (t.id === msg.threadId ? { ...t, unreadForAdmin: 0 } : t))
+                  );
+                }
+              }
+
+              if (msg.sender === 'customer') {
+                playChatNotificationChime();
+                const isCurrentlyViewing =
+                  activeSectionRef.current === 'messagerie' &&
+                  selectedChatIdRef.current === msg.threadId;
+                if (!isCurrentlyViewing) {
+                  setLiveChatAlert({
+                    threadId: msg.threadId,
+                    title: `Message de ${msg.senderName} (${msg.threadId})`,
+                    body: msg.text
+                  });
+                }
+                if (document.hidden || !isCurrentlyViewing) {
+                  void showInstantBrowserNotification({
+                    title: `Message de ${msg.senderName} (${msg.threadId})`,
+                    body: msg.text,
+                    url: `/?admin=1&chat=${encodeURIComponent(msg.threadId)}#admin`,
+                    tag: `huize-admin-${msg.threadId}`
+                  });
+                }
+              }
+            } else if (payload.type === 'chat:status' && payload.thread) {
+              const updatedT = payload.thread as OrderThread;
+              setChatThreads((prev) =>
+                prev.map((t) => (t.id === updatedT.id ? updatedT : t))
+              );
+              if (selectedChatIdRef.current === updatedT.id && payload.message) {
+                setChatMessages((prev) =>
+                  prev.some((m) => m.id === payload.message.id)
+                    ? prev
+                    : [...prev, payload.message]
+                );
+              }
+              onSyncOrderStatus?.(updatedT.orderId, updatedT.status);
+            } else if (payload.type === 'chat:read' && payload.thread) {
+              const updatedT = payload.thread as OrderThread;
+              setChatThreads((prev) =>
+                prev.map((t) => (t.id === updatedT.id ? updatedT : t))
+              );
+            }
+          } catch {
+            // Ignore malformed WS payloads
+          }
+        };
+        ws.onclose = () => {
+          setChatWsConnected(false);
+          if (!closedByEffect) {
+            reconnectTimer = setTimeout(connectAdminWs, 3500);
+          }
+        };
+        ws.onerror = () => {
+          setChatWsConnected(false);
+        };
+      } catch {
+        setChatWsConnected(false);
+      }
+    };
+
+    connectAdminWs();
+    return () => {
+      closedByEffect = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (ws) ws.close();
+    };
+  }, [refreshChatThreads, onNewSiteOrderReceived, onSyncOrderStatus]);
+
+  const unreadChatCount = chatThreads.reduce((acc, t) => acc + (t.unreadForAdmin || 0), 0);
+
+  useEffect(() => {
+    const baseTitle = 'HUIZE SHOP — Admin Boutique';
+    document.title =
+      unreadChatCount > 0 ? `(${unreadChatCount}) ${baseTitle}` : baseTitle;
+    return () => {
+      document.title = 'HUIZE SHOP — Boutique de Mode & Chaussures au Burkina Faso';
+    };
+  }, [unreadChatCount]);
+
+  const handleSendAdminChatMessage = async (
+    threadId: string,
+    text: string,
+    attachedProduct?: OrderItemSnapshot
+  ) => {
+    const res = await sendAdminChatMessage(threadId, text, attachedProduct);
+    if (res.success && res.message) {
+      setChatMessages((prev) =>
+        prev.some((m) => m.id === res.message!.id) ? prev : [...prev, res.message!]
+      );
+      if (res.thread) {
+        setChatThreads((prev) =>
+          prev.map((t) => (t.id === res.thread!.id ? res.thread! : t))
+        );
+      }
+    }
+  };
+
+  const handleUpdateChatThreadStatus = async (
+    threadId: string,
+    status: WhatsAppOrder['status']
+  ) => {
+    const res = await updateAdminThreadStatus(threadId, status);
+    if (res.success && res.thread) {
+      setChatThreads((prev) =>
+        prev.map((t) => (t.id === res.thread!.id ? res.thread! : t))
+      );
+      if (res.message) {
+        setChatMessages((prev) =>
+          prev.some((m) => m.id === res.message!.id) ? prev : [...prev, res.message!]
+        );
+      }
+      onSyncOrderStatus?.(res.thread.orderId, status);
+    }
+  };
+
+  // Team Sharing Form State
+  const [editingMember, setEditingMember] = useState<TeamMember | null>(null);
+  const [memberName, setMemberName] = useState('');
+  const [memberCode, setMemberCode] = useState('');
+  const [memberPin, setMemberPin] = useState('');
+  const [memberPhone, setMemberPhone] = useState('');
+  const [teamFormError, setTeamFormError] = useState<string | null>(null);
+  const [revealedPins, setRevealedPins] = useState<Record<string, boolean>>({});
+  const [copiedTeamCode, setCopiedTeamCode] = useState<string | null>(null);
 
   // Filters
   const [productSearch, setProductSearch] = useState('');
   const [productCategoryFilter, setProductCategoryFilter] = useState('all');
+  const [previewOrder, setPreviewOrder] = useState<WhatsAppOrder | null>(null);
 
   // Product Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -88,6 +547,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [formStock, setFormStock] = useState('14');
   const [formRef, setFormRef] = useState('HZ-B05');
   const [formDesc, setFormDesc] = useState('');
+  const [formFeatured, setFormFeatured] = useState(true);
   const [formImages, setFormImages] = useState<string[]>(['/src/assets/images/product_velocity_sneakers_1794167661807.jpg']);
   const [manualImageUrl, setManualImageUrl] = useState('');
   const [isUploadingImage, setIsUploadingImage] = useState(false);
@@ -133,9 +593,48 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     });
   };
 
-  // New Category State
+  // Category Create / Edit State
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [newCatName, setNewCatName] = useState('');
   const [newCatIcon, setNewCatIcon] = useState('🎒');
+  const [newCatBadge, setNewCatBadge] = useState('NOUVEAU');
+  const [newCatSubtitle, setNewCatSubtitle] = useState('');
+  const [newCatImage, setNewCatImage] = useState('');
+  const [isUploadingCatImage, setIsUploadingCatImage] = useState(false);
+
+  const handleCategoryImageUpload = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setIsUploadingCatImage(true);
+    const file = files[0];
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        const maxDim = 480;
+        if (width > height && width > maxDim) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else if (height > maxDim) {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          setNewCatImage(canvas.toDataURL('image/jpeg', 0.8));
+        }
+        setIsUploadingCatImage(false);
+      };
+      img.onerror = () => setIsUploadingCatImage(false);
+      img.src = e.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Media & Home Banner State (Site Logo, Hero photo and scrolling carousel products)
   const [logoUrl, setLogoUrl] = useState<string>(mediaConfig?.logoUrl || '');
@@ -281,6 +780,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const clean = (urlToAdd ?? newHeroImageUrl).trim();
     if (!clean) return;
     setHeroImages((prev) => {
+      const existingIdx = prev.indexOf(clean);
+      if (existingIdx !== -1) {
+        setSelectedHeroIdx(existingIdx);
+        return prev;
+      }
       const next = [...prev, clean];
       setSelectedHeroIdx(next.length - 1);
       setHeroImg(next[0]);
@@ -413,6 +917,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setFormStock('10');
     setFormRef(`HZ-${Math.floor(100 + Math.random() * 900)}`);
     setFormDesc('Article haute qualité certifié HUIZE SHOP disponible à Ouagadougou.');
+    setFormFeatured(true);
     setFormImages(['/src/assets/images/product_velocity_sneakers_1794167661807.jpg']);
     setManualImageUrl('');
     setAiAnalysisError(null);
@@ -431,6 +936,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setFormStock(prod.stock.toString());
     setFormRef(prod.ref);
     setFormDesc(prod.description);
+    setFormFeatured(Boolean(prod.featured));
     setFormImages(prod.images && prod.images.length ? prod.images : ['/src/assets/images/product_velocity_sneakers_1794167661807.jpg']);
     setManualImageUrl('');
     setAiAnalysisError(null);
@@ -475,7 +981,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         stock: parseInt(formStock, 10) || 0,
         ref: formRef,
         description: formDesc,
-        images: finalImages
+        images: finalImages,
+        featured: formFeatured
       });
     } else {
       onAddProduct({
@@ -490,7 +997,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         ref: formRef,
         description: formDesc,
         images: finalImages,
-        featured: true
+        featured: formFeatured
       });
     }
 
@@ -556,19 +1063,61 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setAdjustingPriceProduct(null);
   };
 
-  const handleAddCategorySubmit = (e: React.FormEvent) => {
+  const resetCategoryForm = () => {
+    setEditingCategory(null);
+    setNewCatName('');
+    setNewCatIcon('🎒');
+    setNewCatBadge('NOUVEAU');
+    setNewCatSubtitle('');
+    setNewCatImage('');
+  };
+
+  const handleEditCategoryClick = (cat: Category) => {
+    setEditingCategory(cat);
+    setNewCatName(cat.name);
+    setNewCatIcon(cat.icon || '🛍️');
+    setNewCatBadge(cat.badge || 'COLLECTION');
+    setNewCatSubtitle(cat.subtitle || '');
+    setNewCatImage(cat.image || '');
+  };
+
+  const handleCategorySubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCatName.trim()) return;
-    onAddCategory(newCatName.trim(), newCatIcon);
-    setNewCatName('');
+
+    if (editingCategory) {
+      onUpdateCategory({
+        ...editingCategory,
+        name: newCatName.trim(),
+        icon: newCatIcon.trim() || '🛍️',
+        badge: newCatBadge.trim().toUpperCase() || 'COLLECTION',
+        subtitle: newCatSubtitle.trim() || undefined,
+        image: newCatImage.trim() || undefined
+      });
+    } else {
+      onAddCategory({
+        name: newCatName.trim(),
+        icon: newCatIcon.trim() || '🛍️',
+        badge: newCatBadge.trim().toUpperCase() || 'NOUVEAU',
+        subtitle: newCatSubtitle.trim() || undefined,
+        image: newCatImage.trim() || undefined
+      });
+    }
+    resetCategoryForm();
   };
 
   // Filter products for the table
+  const featuredCount = products.filter((p) => p.featured === true).length;
   const filteredProducts = products.filter((p) => {
     const matchSearch =
       p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
       p.ref.toLowerCase().includes(productSearch.toLowerCase());
-    const matchCat = productCategoryFilter === 'all' || p.category === productCategoryFilter;
+    const matchCat =
+      productCategoryFilter === 'all'
+        ? true
+        : productCategoryFilter === 'featured'
+        ? p.featured === true
+        : p.category === productCategoryFilter;
     return matchSearch && matchCat;
   });
 
@@ -586,10 +1135,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   ).length;
 
   const handleRefreshClick = async () => {
-    if (!onRefreshAdminData || isRefreshingData) return;
+    if (isRefreshingData) return;
     setIsRefreshingData(true);
     try {
-      await onRefreshAdminData();
+      await Promise.all([
+        onRefreshAdminData ? onRefreshAdminData() : Promise.resolve(),
+        refreshAnalytics(true)
+      ]);
     } finally {
       setIsRefreshingData(false);
     }
@@ -626,6 +1178,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           >
             <LayoutDashboard className="w-4 h-4 text-[#D8F36A]" />
             <span>Tableau de bord</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setActiveSection('statistiques');
+              void refreshAnalytics(true);
+            }}
+            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-left transition-colors cursor-pointer ${
+              activeSection === 'statistiques'
+                ? 'bg-[#1F5A40] text-white font-bold shadow-xs'
+                : 'text-white/80 hover:bg-white/10 hover:text-[#D8F36A]'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <TrendingUp className="w-4 h-4 text-[#D8F36A]" />
+              <span>Visites &amp; Courbe</span>
+            </div>
+            <span className="bg-[#D8F36A]/20 text-[#D8F36A] text-xs font-bold px-2 py-0.2 rounded-full tabular-nums">
+              {dailyStats.find((s) => s.date === new Date().toISOString().slice(0, 10))?.visits ?? 0}
+            </span>
           </button>
 
           <button
@@ -713,6 +1285,49 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </span>
           </button>
 
+          <button
+            onClick={() => {
+              setActiveSection('messagerie');
+              refreshChatThreads(false);
+            }}
+            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-left transition-colors cursor-pointer ${
+              activeSection === 'messagerie'
+                ? 'bg-[#1F5A40] text-white font-bold shadow-xs'
+                : 'text-white/80 hover:bg-white/10 hover:text-[#D8F36A]'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <MessageSquare className="w-4 h-4 text-[#D8F36A]" />
+              <span>Messagerie Clients</span>
+            </div>
+            {unreadChatCount > 0 ? (
+              <span className="bg-[#D8F36A] text-[#123B2A] text-xs font-extrabold px-2 py-0.2 rounded-full tabular-nums">
+                {unreadChatCount}
+              </span>
+            ) : (
+              <span className="bg-white/10 text-white text-xs font-bold px-2 py-0.2 rounded-full tabular-nums">
+                {chatThreads.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => setActiveSection('equipe')}
+            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-left transition-colors cursor-pointer ${
+              activeSection === 'equipe'
+                ? 'bg-[#1F5A40] text-white font-bold shadow-xs'
+                : 'text-white/80 hover:bg-white/10 hover:text-[#D8F36A]'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <Share2 className="w-4 h-4 text-[#D8F36A]" />
+              <span>Équipe &amp; Partage</span>
+            </div>
+            <span className="bg-white/10 text-[#D8F36A] text-xs font-bold px-2 py-0.2 rounded-full">
+              {teamMembers.length}
+            </span>
+          </button>
+
           <p className="text-[10px] uppercase font-bold text-white/40 px-3 pt-4 pb-1 tracking-wider">
             Boutique &amp; Sortie
           </p>
@@ -759,6 +1374,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
           <div className="flex items-center gap-2">
             <button
+              type="button"
+              onClick={handleToggleAdminPush}
+              disabled={isTogglingPush}
+              title={adminPushEnabled ? 'Alertes actives' : 'Activer les alertes téléphone'}
+              className={`p-1.5 rounded-full transition-colors cursor-pointer ${
+                adminPushEnabled
+                  ? 'bg-[#D8F36A] text-[#123B2A]'
+                  : 'bg-white/10 hover:bg-white/20 text-white'
+              }`}
+            >
+              {adminPushEnabled ? (
+                <BellRing className="w-3.5 h-3.5" />
+              ) : (
+                <Bell className="w-3.5 h-3.5" />
+              )}
+            </button>
+            <button
               onClick={openAddModal}
               className="bg-[#D8F36A] text-[#123B2A] font-bold text-xs px-2.5 py-1.5 rounded-full"
             >
@@ -791,6 +1423,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             }`}
           >
             📊 Tableau de bord
+          </button>
+          <button
+            onClick={() => {
+              setActiveSection('statistiques');
+              void refreshAnalytics(true);
+            }}
+            className={`px-3 py-1.5 rounded-full font-bold transition-colors ${
+              activeSection === 'statistiques' ? 'bg-[#D8F36A] text-[#123B2A]' : 'text-white/80'
+            }`}
+          >
+            📈 Visites &amp; Courbe
           </button>
           <button
             onClick={() => setActiveSection('catalogue')}
@@ -832,6 +1475,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           >
             💬 WhatsApp ({orders.length})
           </button>
+          <button
+            onClick={() => {
+              setActiveSection('messagerie');
+              refreshChatThreads(false);
+            }}
+            className={`px-3 py-1.5 rounded-full font-bold transition-colors ${
+              activeSection === 'messagerie' ? 'bg-[#D8F36A] text-[#123B2A]' : 'text-white/80'
+            }`}
+          >
+            ✉️ Messagerie ({unreadChatCount > 0 ? `${unreadChatCount} non lu` : chatThreads.length})
+          </button>
+          <button
+            onClick={() => setActiveSection('equipe')}
+            className={`px-3 py-1.5 rounded-full font-bold transition-colors ${
+              activeSection === 'equipe' ? 'bg-[#D8F36A] text-[#123B2A]' : 'text-white/80'
+            }`}
+          >
+            🤝 Équipe ({teamMembers.length})
+          </button>
         </div>
       </div>
 
@@ -849,6 +1511,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
 
           <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleToggleAdminPush}
+              disabled={isTogglingPush}
+              className={`px-3.5 py-2 rounded-full border text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
+                adminPushEnabled
+                  ? 'border-[#1F5A40]/30 bg-[#EFEFE6] text-[#123B2A] hover:bg-[#E1E3DA]'
+                  : 'border-[#E1E3DA] bg-[#FAF9F5] text-[#123B2A] hover:bg-[#EFEFE6]'
+              }`}
+            >
+              {adminPushEnabled ? (
+                <>
+                  <BellRing className="w-3.5 h-3.5 text-[#1F5A40]" />
+                  <span>Alertes actives</span>
+                </>
+              ) : (
+                <>
+                  <Bell className="w-3.5 h-3.5 text-[#6B726C]" />
+                  <span>Activer alertes</span>
+                </>
+              )}
+            </button>
+
             <button
               onClick={onExitAdmin}
               className="px-4 py-2 rounded-full border border-[#E1E3DA] bg-[#FAF9F5] hover:bg-[#EFEFE6] text-xs font-bold text-[#123B2A] transition-colors cursor-pointer flex items-center gap-1.5"
@@ -912,6 +1597,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </section>
 
+          {/* 1B. DAILY VISITS, PURCHASES & SITE EVOLUTION CURVE */}
+          {(activeSection === 'dashboard' || activeSection === 'statistiques') && (
+            <AdminAnalyticsPanel
+              dailyStats={dailyStats}
+              orders={orders}
+              isLoading={isLoadingAnalytics}
+              compact={activeSection === 'dashboard'}
+              onRefresh={() => refreshAnalytics(true)}
+              onOpenFullAnalytics={() => {
+                setActiveSection('statistiques');
+                void refreshAnalytics(true);
+              }}
+            />
+          )}
+
           {/* 2. CATALOGUE MANAGEMENT SECTION */}
           {(activeSection === 'dashboard' || activeSection === 'catalogue') && (
             <section className="bg-white border border-[#E1E3DA] rounded-2xl shadow-sm overflow-hidden">
@@ -921,7 +1621,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     📦 Gestion des Produits de la Boutique
                   </h2>
                   <span className="text-xs bg-[#EFEFE6] text-[#123B2A] px-2 py-0.5 rounded-full font-bold">
-                    {filteredProducts.length} articles
+                    {filteredProducts.length} articles · {featuredCount} phares
                   </span>
                 </div>
 
@@ -943,6 +1643,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     className="p-1.5 text-xs bg-white border border-[#E1E3DA] rounded-lg focus:outline-[#1F5A40]"
                   >
                     <option value="all">Toutes catégories</option>
+                    <option value="featured">⭐ Produits phares ({featuredCount})</option>
                     {categories.map((c) => (
                       <option key={c.id} value={c.slug}>
                         {c.name}
@@ -969,6 +1670,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <th className="p-3.5">Prix (F CFA)</th>
                       <th className="p-3.5">Pointures / Tailles</th>
                       <th className="p-3.5">Stock</th>
+                      <th className="p-3.5">Produits phares</th>
                       <th className="p-3.5 text-right">Actions</th>
                     </tr>
                   </thead>
@@ -976,6 +1678,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     {filteredProducts.map((p) => {
                       const isOutOfStock = p.stock <= 0;
                       const isLowStock = p.stock > 0 && p.stock <= 3;
+                      const isFeatured = p.featured === true;
                       return (
                         <tr key={p.id} className="hover:bg-[#FAF9F5] transition-colors">
                           <td className="p-3.5">
@@ -1010,6 +1713,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             >
                               {isOutOfStock ? 'Rupture (0)' : isLowStock ? `Faible (${p.stock})` : `En stock (${p.stock})`}
                             </span>
+                          </td>
+                          <td className="p-3.5">
+                            <button
+                              type="button"
+                              onClick={() => onUpdateProduct({ ...p, featured: !isFeatured })}
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold border transition-colors cursor-pointer whitespace-nowrap ${
+                                isFeatured
+                                  ? 'bg-[#D8F36A]/35 border-[#1F5A40]/30 text-[#123B2A] hover:bg-[#D8F36A]/60'
+                                  : 'bg-[#FAF9F5] border-[#E1E3DA] text-[#6B726C] hover:text-[#123B2A]'
+                              }`}
+                              title={
+                                isFeatured
+                                  ? 'Affiché dans Nos produits phares (cliquer pour retirer)'
+                                  : 'Masqué de Nos produits phares (cliquer pour afficher)'
+                              }
+                            >
+                              <Star className={`w-3.5 h-3.5 ${isFeatured ? 'fill-[#123B2A] text-[#123B2A]' : 'text-[#6B726C]'}`} />
+                              <span>{isFeatured ? 'Affiché' : 'Masqué'}</span>
+                            </button>
                           </td>
                           <td className="p-3.5 text-right">
                             <div className="inline-flex items-center gap-1.5">
@@ -1076,7 +1798,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <span className="text-[11px] text-[#6B726C]">Tailles: {p.sizes.join(', ')}</span>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-1.5 pt-1">
+                    <div className="grid grid-cols-4 gap-1.5 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => onUpdateProduct({ ...p, featured: !(p.featured === true) })}
+                        className={`py-1 text-center border rounded text-xs font-bold flex items-center justify-center gap-1 cursor-pointer ${
+                          p.featured === true
+                            ? 'bg-[#D8F36A]/45 border-[#1F5A40]/40 text-[#123B2A]'
+                            : 'bg-white border-[#E1E3DA] text-[#6B726C]'
+                        }`}
+                        title="Afficher ou masquer dans Nos produits phares"
+                      >
+                        <Star className={`w-3 h-3 ${p.featured === true ? 'fill-[#123B2A] text-[#123B2A]' : ''}`} />
+                        <span>{p.featured === true ? 'Phare' : 'Masqué'}</span>
+                      </button>
                       <button
                         onClick={() => openEditModal(p)}
                         className="py-1 text-center bg-white border border-[#E1E3DA] rounded text-xs font-semibold"
@@ -1110,77 +1845,253 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           {/* 3. CATEGORIES MANAGEMENT SECTION */}
           {(activeSection === 'dashboard' || activeSection === 'categories') && (
             <section className="bg-white border border-[#E1E3DA] rounded-2xl shadow-sm p-5">
-              <div className="flex items-center justify-between mb-4 border-b border-[#E1E3DA] pb-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-4 border-b border-[#E1E3DA] pb-3">
                 <div className="flex items-center gap-2">
                   <h2 className="text-base sm:text-lg font-bold font-title text-[#123B2A]">
-                    📁 Gestion des Catégories de la Boutique
+                    📁 Catégories d&apos;accueil &amp; Boutique
                   </h2>
                   <span className="text-xs bg-[#E8F7EE] text-[#1F5A40] font-bold px-2 py-0.5 rounded-full">
                     {categories.length} actives
                   </span>
                 </div>
+                <p className="text-[11px] text-[#6B726C]">
+                  Synchronisées automatiquement sur l&apos;accueil, le menu et le pied de page.
+                </p>
               </div>
 
-              {/* Add category form */}
-              <form onSubmit={handleAddCategorySubmit} className="flex flex-wrap gap-2 mb-4 bg-[#FAF9F5] p-3 rounded-xl border border-[#E1E3DA]">
-                <input
-                  type="text"
-                  placeholder="Nom de la nouvelle catégorie..."
-                  value={newCatName}
-                  onChange={(e) => setNewCatName(e.target.value)}
-                  className="flex-1 min-w-[200px] p-2 text-xs bg-white border border-[#E1E3DA] rounded-lg"
-                />
-                <select
-                  value={newCatIcon}
-                  onChange={(e) => setNewCatIcon(e.target.value)}
-                  className="p-2 text-xs bg-white border border-[#E1E3DA] rounded-lg"
-                >
-                  <option value="👟">👟 Baskets</option>
-                  <option value="👡">👡 Sandales</option>
-                  <option value="👕">👕 Vêtements</option>
-                  <option value="🧢">🧢 Casquettes</option>
-                  <option value="👜">👜 Maroquinerie</option>
-                  <option value="🕶️">🕶️ Lunettes</option>
-                </select>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-[#123B2A] hover:bg-[#1F5A40] text-white text-xs font-bold rounded-lg cursor-pointer"
-                >
-                  + Ajouter catégorie
-                </button>
-              </form>
+              {/* Add / Edit category form */}
+              <form
+                onSubmit={handleCategorySubmit}
+                className="mb-5 bg-[#FAF9F5] p-4 rounded-xl border border-[#E1E3DA] flex flex-col gap-3"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-[#123B2A]">
+                    {editingCategory
+                      ? `✏️ Modifier la catégorie « ${editingCategory.name} »`
+                      : '➕ Ajouter une nouvelle catégorie sur le site'}
+                  </span>
+                  {editingCategory && (
+                    <button
+                      type="button"
+                      onClick={resetCategoryForm}
+                      className="text-xs font-semibold text-[#6B726C] hover:text-[#123B2A] cursor-pointer"
+                    >
+                      Annuler l&apos;édition
+                    </button>
+                  )}
+                </div>
 
-              {/* Categories list */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {categories.map((cat) => (
-                  <div
-                    key={cat.id}
-                    className="p-3.5 rounded-xl border border-[#E1E3DA] bg-white flex items-center justify-between shadow-xs"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <span className="w-10 h-10 rounded-lg bg-[#EFEFE6] flex items-center justify-center text-xl">
-                        {cat.icon}
-                      </span>
-                      <div>
-                        <p className="font-bold text-sm text-[#123B2A]">{cat.name}</p>
-                        <p className="text-[11px] text-[#6B726C]">
-                          {products.filter((p) => p.category === cat.slug).length} articles rattachés
-                        </p>
-                      </div>
-                    </div>
-                    {categories.length > 1 && (
-                      <button
-                        onClick={() => {
-                          if (confirm(`Supprimer la catégorie "${cat.name}" ?`)) onDeleteCategory(cat.id);
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#123B2A] mb-1">
+                      Nom affiché *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ex: Sacs & Pochettes"
+                      value={newCatName}
+                      onChange={(e) => setNewCatName(e.target.value)}
+                      className="w-full p-2 text-xs bg-white border border-[#E1E3DA] rounded-lg focus:outline-[#1F5A40]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#123B2A] mb-1">
+                      Icône / Émoji
+                    </label>
+                    <div className="flex gap-1.5">
+                      <select
+                        value={
+                          ['👟', '👡', '👕', '🧢', '👜', '🎒', '🕶️', '⌚', '👗', '👖', '💍', '⚽', '🛍️'].includes(newCatIcon)
+                            ? newCatIcon
+                            : 'custom'
+                        }
+                        onChange={(e) => {
+                          if (e.target.value !== 'custom') {
+                            setNewCatIcon(e.target.value);
+                          }
                         }}
-                        className="text-red-600 hover:text-red-800 p-1 cursor-pointer"
-                        title="Supprimer"
+                        className="flex-1 p-2 text-xs bg-white border border-[#E1E3DA] rounded-lg"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <option value="👟">👟 Baskets</option>
+                        <option value="👡">👡 Sandales</option>
+                        <option value="👕">👕 Vêtements</option>
+                        <option value="🧢">🧢 Casquettes</option>
+                        <option value="👜">👜 Sacs / Cuir</option>
+                        <option value="🎒">🎒 Sacs à dos</option>
+                        <option value="🕶️">🕶️ Lunettes</option>
+                        <option value="⌚">⌚ Montres</option>
+                        <option value="👗">👗 Robes / Mode</option>
+                        <option value="👖">👖 Jeans / Bas</option>
+                        <option value="💍">💍 Bijoux</option>
+                        <option value="⚽">⚽ Sport</option>
+                        <option value="🛍️">🛍️ Autre</option>
+                        {!['👟', '👡', '👕', '🧢', '👜', '🎒', '🕶️', '⌚', '👗', '👖', '💍', '⚽', '🛍️'].includes(newCatIcon) && (
+                          <option value="custom">Personnalisé</option>
+                        )}
+                      </select>
+                      <input
+                        type="text"
+                        value={newCatIcon}
+                        onChange={(e) => setNewCatIcon(e.target.value)}
+                        maxLength={4}
+                        aria-label="Émoji personnalisé"
+                        className="w-12 p-2 text-center text-sm bg-white border border-[#E1E3DA] rounded-lg"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#123B2A] mb-1">
+                      Badge rond (Accueil)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="TOP, NOUVEAU, CUIR..."
+                      maxLength={14}
+                      value={newCatBadge}
+                      onChange={(e) => setNewCatBadge(e.target.value)}
+                      className="w-full p-2 text-xs bg-white border border-[#E1E3DA] rounded-lg uppercase focus:outline-[#1F5A40]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#123B2A] mb-1">
+                      Sous-titre court (Optionnel)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ex: Sneakers & Street"
+                      value={newCatSubtitle}
+                      onChange={(e) => setNewCatSubtitle(e.target.value)}
+                      className="w-full p-2 text-xs bg-white border border-[#E1E3DA] rounded-lg focus:outline-[#1F5A40]"
+                    />
+                  </div>
+                </div>
+
+                {/* Optional category photo */}
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3 pt-1">
+                  <div className="flex items-center gap-2.5 flex-1">
+                    <div className="w-11 h-11 rounded-full bg-white border border-[#E1E3DA] flex items-center justify-center overflow-hidden shrink-0">
+                      {newCatImage ? (
+                        <img src={newCatImage} alt="Aperçu catégorie" className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-xl">{newCatIcon || '🛍️'}</span>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Lien photo (optionnel — sinon la photo du 1er produit est utilisée)"
+                      value={newCatImage}
+                      onChange={(e) => setNewCatImage(e.target.value)}
+                      className="flex-1 p-2 text-xs bg-white border border-[#E1E3DA] rounded-lg focus:outline-[#1F5A40]"
+                    />
+                    {newCatImage && (
+                      <button
+                        type="button"
+                        onClick={() => setNewCatImage('')}
+                        title="Retirer la photo personnalisée"
+                        className="p-2 text-xs text-red-600 hover:bg-red-50 rounded-lg border border-red-200 cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
                       </button>
                     )}
                   </div>
-                ))}
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <label className="px-3 py-2 bg-white hover:bg-[#EFEFE6] border border-[#E1E3DA] text-[#123B2A] text-xs font-bold rounded-lg cursor-pointer inline-flex items-center gap-1.5">
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>{isUploadingCatImage ? 'Compression...' : 'Photo'}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => handleCategoryImageUpload(e.target.files)}
+                        className="hidden"
+                      />
+                    </label>
+
+                    <button
+                      type="submit"
+                      className="px-4 py-2 bg-[#123B2A] hover:bg-[#1F5A40] text-white text-xs font-bold rounded-lg cursor-pointer"
+                    >
+                      {editingCategory ? 'Enregistrer' : '+ Ajouter catégorie'}
+                    </button>
+                  </div>
+                </div>
+              </form>
+
+              {/* Categories list */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {categories.map((cat) => {
+                  const attachedCount = products.filter((p) => p.category === cat.slug).length;
+                  const autoProductImg = products.find(
+                    (p) => p.category === cat.slug && p.images?.[0]
+                  )?.images?.[0];
+                  const thumbSrc = cat.image || autoProductImg;
+
+                  return (
+                    <div
+                      key={cat.id}
+                      className={`p-3.5 rounded-xl border bg-white flex items-center justify-between gap-2 shadow-xs ${
+                        editingCategory?.id === cat.id
+                          ? 'border-[#123B2A] ring-2 ring-[#D8F36A]'
+                          : 'border-[#E1E3DA]'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-11 h-11 rounded-full bg-[#EFEFE6] border border-[#E1E3DA] flex items-center justify-center text-xl overflow-hidden shrink-0">
+                          {thumbSrc ? (
+                            <img src={thumbSrc} alt={cat.name} className="w-full h-full object-cover" />
+                          ) : (
+                            <span>{cat.icon}</span>
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <p className="font-bold text-sm text-[#123B2A] truncate">{cat.name}</p>
+                            {cat.badge && (
+                              <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full bg-[#123B2A] text-[#D8F36A] uppercase shrink-0">
+                                {cat.badge}
+                              </span>
+                            )}
+                          </div>
+                          {cat.subtitle && (
+                            <p className="text-[11px] text-[#4A5568] truncate">{cat.subtitle}</p>
+                          )}
+                          <p className="text-[11px] text-[#6B726C]">
+                            {attachedCount} article{attachedCount > 1 ? 's' : ''} rattaché{attachedCount > 1 ? 's' : ''}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleEditCategoryClick(cat)}
+                          className="p-1.5 text-[#123B2A] hover:bg-[#EFEFE6] rounded-md cursor-pointer"
+                          title="Modifier cette catégorie"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        {categories.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (confirm(`Supprimer la catégorie "${cat.name}" ?`)) {
+                                if (editingCategory?.id === cat.id) resetCategoryForm();
+                                onDeleteCategory(cat.id);
+                              }
+                            }}
+                            className="text-red-600 hover:bg-red-50 p-1.5 rounded-md cursor-pointer"
+                            title="Supprimer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </section>
           )}
@@ -1254,6 +2165,65 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             )}
 
+            {/* CUSTOMER REVIEWS MODERATION IN CLIENTS TAB */}
+            {activeSection === 'clients' && (
+              <div className="lg:col-span-6 bg-white border border-[#E1E3DA] rounded-2xl shadow-sm p-5">
+                <div className="flex items-center justify-between mb-4 border-b border-[#E1E3DA] pb-3 gap-2">
+                  <h2 className="text-base font-bold font-title text-[#123B2A] flex items-center gap-2">
+                    <Star className="w-4 h-4 text-amber-500 fill-amber-400" />
+                    <span>Avis Clients publiés ({customerReviews.length})</span>
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={() => refreshCustomerReviews(true)}
+                    disabled={isLoadingReviews}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-[#E1E3DA] bg-[#FAF9F5] hover:bg-[#EFEFE6] text-[#123B2A] text-[11px] font-bold transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isLoadingReviews ? 'animate-spin' : ''}`} />
+                    <span>Actualiser</span>
+                  </button>
+                </div>
+
+                <div className="divide-y divide-[#E1E3DA]">
+                  {customerReviews.length === 0 ? (
+                    <div className="py-8 text-center text-xs text-[#6B726C]">
+                      Aucun avis client publié pour le moment. Les avis envoyés depuis la page d&apos;accueil apparaîtront ici.
+                    </div>
+                  ) : (
+                    customerReviews.map((review) => (
+                      <div key={review.id} className="py-3 flex items-start justify-between gap-3">
+                        <div className="min-w-0 space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-bold text-xs sm:text-sm text-[#123B2A]">
+                              {review.authorName}
+                            </span>
+                            {review.city && (
+                              <span className="text-[11px] text-[#6B726C]">· {review.city}</span>
+                            )}
+                            <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-amber-600 tabular-nums">
+                              ★ {review.rating}/5
+                            </span>
+                          </div>
+                          <p className="text-xs text-[#202720] leading-relaxed break-words">
+                            « {review.comment} »
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteCustomerReview(review)}
+                          title="Supprimer cet avis"
+                          className="p-1.5 rounded-full text-red-600 hover:bg-red-50 transition-colors cursor-pointer shrink-0"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* LIVE WHATSAPP ORDERS (6 Cols) */}
             {(activeSection === 'dashboard' || activeSection === 'commandes') && (
               <div className="lg:col-span-6 bg-white border border-[#E1E3DA] rounded-2xl shadow-sm p-5">
@@ -1281,57 +2251,630 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       Aucune commande réelle enregistrée pour le moment. Les commandes envoyées par les clients depuis le panier ou les fiches produits apparaîtront ici.
                     </div>
                   ) : (
-                    orders.map((ord) => (
-                      <div
-                        key={ord.id}
-                        className="p-3.5 rounded-xl border border-[#E1E3DA] bg-[#FAF9F5] flex items-center justify-between gap-3 text-xs"
-                      >
-                        <div className="min-w-0">
-                          <p className="font-bold text-[#123B2A] truncate">
-                            {ord.id} • {ord.customerName}
-                            {ord.phone && ord.phone !== 'Non précisé' ? ` (${ord.phone})` : ''}
-                          </p>
-                          <p className="text-[#6B726C] text-[11px]">{ord.itemsSummary}</p>
-                          <p className="text-[10px] text-[#1F5A40] mt-0.5">{ord.city} • {ord.date}</p>
-                        </div>
+                    orders.map((ord) => {
+                      const resolvedOrderItems =
+                        ord.items && ord.items.length > 0
+                          ? ord.items.map((item) => {
+                              const liveProd = products.find((p) => p.id === item.productId);
+                              return {
+                                name: item.name,
+                                ref: item.ref || liveProd?.ref,
+                                size: item.size,
+                                quantity: item.quantity,
+                                price: item.price,
+                                image:
+                                  liveProd?.images?.[0] ||
+                                  item.image ||
+                                  `/api/products/${encodeURIComponent(item.productId)}/image.jpg`
+                              };
+                            })
+                          : products
+                              .filter((p) => {
+                                const lowerSummary = ord.itemsSummary.toLowerCase();
+                                return (
+                                  lowerSummary.includes(p.name.toLowerCase()) ||
+                                  (p.ref && lowerSummary.includes(p.ref.toLowerCase()))
+                                );
+                              })
+                              .map((p) => ({
+                                name: p.name,
+                                ref: p.ref,
+                                size: undefined,
+                                quantity: 1,
+                                price: p.price,
+                                image: p.images[0] || `/api/products/${encodeURIComponent(p.id)}/image.jpg`
+                              }));
 
-                        <div className="text-right shrink-0 flex flex-col items-end gap-1">
-                          <p className="font-bold text-[#123B2A] tabular-nums font-title text-sm">
-                            {formatFCFA(ord.total)}
-                          </p>
-                          <div className="flex items-center gap-1.5">
-                            <select
-                              value={ord.status}
-                              onChange={(e) =>
-                                onUpdateOrderStatus(ord.id, e.target.value as WhatsAppOrder['status'])
-                              }
-                              className="text-[10px] font-bold p-1 rounded-md bg-white border border-[#E1E3DA]"
-                            >
-                              <option value="pending">À livrer</option>
-                              <option value="paid">Payé (Orange/Moov)</option>
-                              <option value="delivered">Livré</option>
-                              <option value="discussion">En discussion</option>
-                            </select>
-                            {onDeleteOrder && (
+                      return (
+                        <div
+                          key={ord.id}
+                          className="p-3.5 rounded-xl border border-[#E1E3DA] bg-[#FAF9F5] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
+                        >
+                          <div className="flex items-start sm:items-center gap-3 min-w-0">
+                            {resolvedOrderItems.length > 0 ? (
                               <button
                                 type="button"
-                                onClick={() => {
-                                  if (confirm(`Supprimer la commande ${ord.id} ?`)) {
-                                    onDeleteOrder(ord.id);
+                                onClick={() => setPreviewOrder(ord)}
+                                title="Agrandir la photo du ou des produits commandés"
+                                className="flex -space-x-2 shrink-0 cursor-pointer group"
+                              >
+                                {resolvedOrderItems.slice(0, 3).map((item, idx) => (
+                                  <img
+                                    key={idx}
+                                    src={item.image}
+                                    alt={item.name}
+                                    className="w-12 h-12 rounded-lg object-cover bg-white border-2 border-white ring-1 ring-[#E1E3DA] shadow-xs group-hover:scale-105 transition-transform"
+                                  />
+                                ))}
+                                {resolvedOrderItems.length > 3 && (
+                                  <span className="w-12 h-12 rounded-lg bg-[#123B2A] text-[#D8F36A] border-2 border-white flex items-center justify-center text-[11px] font-bold">
+                                    +{resolvedOrderItems.length - 3}
+                                  </span>
+                                )}
+                              </button>
+                            ) : (
+                              <div className="w-12 h-12 rounded-lg bg-white border border-[#E1E3DA] flex items-center justify-center text-[#6B726C] shrink-0">
+                                <Package className="w-5 h-5" />
+                              </div>
+                            )}
+
+                            <div className="min-w-0">
+                              <p className="font-bold text-[#123B2A] truncate">
+                                {ord.id} • {ord.customerName}
+                                {ord.phone && ord.phone !== 'Non précisé' ? ` (${ord.phone})` : ''}
+                              </p>
+                              <p className="text-[#4A5568] text-[11px] line-clamp-2">
+                                {ord.itemsSummary}
+                              </p>
+                              <p className="text-[10px] text-[#1F5A40] mt-0.5">
+                                {ord.city} • {ord.date}
+                                {ord.referredByCode ? ` • Conseiller : ${ord.referredByCode}` : ''}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="text-right shrink-0 flex flex-col items-end gap-1.5">
+                            <p className="font-bold text-[#123B2A] tabular-nums font-title text-sm">
+                              {formatFCFA(ord.total)}
+                            </p>
+                            <div className="flex flex-wrap items-center justify-end gap-1.5">
+                              {chatThreads.some((t) => t.orderId === ord.id) && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setActiveSection('messagerie');
+                                    handleSelectChatThread(ord.id);
+                                  }}
+                                  className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-[#123B2A] text-[#D8F36A] text-[10px] font-bold cursor-pointer hover:bg-[#1F5A40]"
+                                >
+                                  <MessageSquare className="w-3 h-3" />
+                                  <span>Discuter</span>
+                                </button>
+                              )}
+                              {onAssignOrderReferral && teamMembers.length > 0 && (
+                                <select
+                                  value={ord.referredByCode || ''}
+                                  onChange={(e) => onAssignOrderReferral(ord.id, e.target.value)}
+                                  title="Attribuer à un membre d'équipe"
+                                  className="text-[10px] font-semibold p-1 rounded-md bg-white border border-[#E1E3DA] text-[#123B2A] max-w-[130px]"
+                                >
+                                  <option value="">Direct boutique</option>
+                                  {teamMembers.map((tm) => (
+                                    <option key={tm.id} value={tm.code}>
+                                      {tm.name} ({tm.code})
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                              <select
+                                value={ord.status}
+                                onChange={(e) => {
+                                  const nextStatus = e.target.value as WhatsAppOrder['status'];
+                                  onUpdateOrderStatus(ord.id, nextStatus);
+                                  if (chatThreads.some((t) => t.orderId === ord.id)) {
+                                    void handleUpdateChatThreadStatus(ord.id, nextStatus);
                                   }
                                 }}
-                                title="Supprimer cette commande"
-                                className="p-1 rounded-md text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 cursor-pointer"
+                                className="text-[10px] font-bold p-1 rounded-md bg-white border border-[#E1E3DA]"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
+                                <option value="pending">À livrer</option>
+                                <option value="paid">Payé (Orange/Moov)</option>
+                                <option value="delivered">Livré</option>
+                                <option value="discussion">En discussion</option>
+                              </select>
+                              {onDeleteOrder && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (confirm(`Supprimer la commande ${ord.id} ?`)) {
+                                      onDeleteOrder(ord.id);
+                                    }
+                                  }}
+                                  title="Supprimer cette commande"
+                                  className="p-1 rounded-md text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 cursor-pointer"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* EQUIPE & PARTAGE MANAGEMENT */}
+            {activeSection === 'equipe' && (() => {
+              const portalUrl = `${getAppOrigin()}/?equipe=1`;
+
+              const memberMetrics = teamMembers.map((member) => {
+                const cleanCode = normalizeReferralCode(member.code);
+                const memberOrders = orders.filter(
+                  (o) => normalizeReferralCode(o.referredByCode) === cleanCode
+                );
+                const validatedSales = memberOrders.filter(
+                  (o) => o.status === 'paid' || o.status === 'delivered'
+                ).length;
+                return {
+                  member,
+                  ordersCount: memberOrders.length,
+                  salesCount: validatedSales
+                };
+              });
+
+              memberMetrics.sort(
+                (a, b) =>
+                  b.salesCount - a.salesCount ||
+                  b.ordersCount - a.ordersCount ||
+                  (b.member.clicks || 0) - (a.member.clicks || 0)
+              );
+
+              const totalTeamClicks = teamMembers.reduce((acc, m) => acc + (m.clicks || 0), 0);
+              const totalTeamOrders = memberMetrics.reduce((acc, item) => acc + item.ordersCount, 0);
+              const totalTeamSales = memberMetrics.reduce((acc, item) => acc + item.salesCount, 0);
+
+              const resetTeamForm = () => {
+                setEditingMember(null);
+                setMemberName('');
+                setMemberCode('');
+                setMemberPin('');
+                setMemberPhone('');
+                setTeamFormError(null);
+              };
+
+              const handleTeamFormSubmit = async (e: React.FormEvent) => {
+                e.preventDefault();
+                setTeamFormError(null);
+
+                const cleanName = memberName.trim();
+                const cleanCode = normalizeReferralCode(memberCode);
+                const cleanPin = memberPin.trim();
+                const cleanPhone = memberPhone.trim();
+
+                if (!cleanName) {
+                  setTeamFormError('Veuillez saisir le nom complet du membre.');
+                  return;
+                }
+                if (!cleanCode || cleanCode.length < 2) {
+                  setTeamFormError('Veuillez choisir un code personnel (au moins 2 caractères, ex : MOUSA).');
+                  return;
+                }
+                if (!cleanPin || cleanPin.length < 4) {
+                  setTeamFormError('Le code PIN doit contenir au moins 4 chiffres.');
+                  return;
+                }
+
+                const duplicate = teamMembers.find(
+                  (m) =>
+                    normalizeReferralCode(m.code) === cleanCode &&
+                    (!editingMember || m.id !== editingMember.id)
+                );
+                if (duplicate) {
+                  setTeamFormError(`Le code "${cleanCode}" est déjà utilisé par ${duplicate.name}.`);
+                  return;
+                }
+
+                if (editingMember && onUpdateTeamMember) {
+                  await onUpdateTeamMember({
+                    ...editingMember,
+                    name: cleanName,
+                    code: cleanCode,
+                    pin: cleanPin,
+                    phone: cleanPhone || undefined
+                  });
+                  resetTeamForm();
+                } else if (onAddTeamMember) {
+                  await onAddTeamMember({
+                    name: cleanName,
+                    code: cleanCode,
+                    pin: cleanPin,
+                    phone: cleanPhone || undefined
+                  });
+                  resetTeamForm();
+                }
+              };
+
+              const handleCopyValue = async (value: string, key: string) => {
+                try {
+                  await navigator.clipboard.writeText(value);
+                  setCopiedTeamCode(key);
+                  setTimeout(() => setCopiedTeamCode(null), 2000);
+                } catch {
+                  // Ignore clipboard failure
+                }
+              };
+
+              return (
+                <div className="lg:col-span-12 flex flex-col gap-6">
+                  {/* Top Header & Portal Link */}
+                  <div className="bg-white border border-[#E1E3DA] rounded-2xl p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                      <h2 className="text-lg font-bold font-title text-[#123B2A] flex items-center gap-2">
+                        <Share2 className="w-5 h-5 text-[#1F5A40]" />
+                        <span>Équipe &amp; Suivi des Partages</span>
+                      </h2>
+                      <p className="text-xs text-[#6B726C] mt-0.5">
+                        Créez un code personnel et un PIN pour chaque membre (avec ou sans téléphone) et suivez clics, commandes et ventes validées.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {onRefreshAdminData && (
+                        <button
+                          type="button"
+                          onClick={handleRefreshClick}
+                          disabled={isRefreshingData}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-[#E1E3DA] bg-[#FAF9F5] hover:bg-[#EFEFE6] text-xs font-bold text-[#123B2A] cursor-pointer disabled:opacity-50"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingData ? 'animate-spin' : ''}`} />
+                          <span>Actualiser</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleCopyValue(portalUrl, 'portal-url')}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#123B2A] hover:bg-[#1F5A40] text-white text-xs font-bold cursor-pointer"
+                      >
+                        {copiedTeamCode === 'portal-url' ? (
+                          <Check className="w-3.5 h-3.5 text-[#D8F36A]" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5 text-[#D8F36A]" />
+                        )}
+                        <span>
+                          {copiedTeamCode === 'portal-url'
+                            ? 'Lien Espace Équipe copié !'
+                            : 'Copier lien Espace Équipe'}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Team KPIs */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="bg-white border border-[#E1E3DA] rounded-2xl p-5 shadow-xs">
+                      <span className="text-xs font-bold uppercase tracking-wider text-[#6B726C]">
+                        Total Clics Équipe
+                      </span>
+                      <p className="text-2xl font-extrabold text-[#123B2A] font-title my-1 tabular-nums">
+                        {totalTeamClicks}
+                      </p>
+                      <span className="text-xs text-[#6B726C]">
+                        Sur l&apos;ensemble des liens partagés
+                      </span>
+                    </div>
+
+                    <div className="bg-white border border-[#E1E3DA] rounded-2xl p-5 shadow-xs">
+                      <span className="text-xs font-bold uppercase tracking-wider text-[#6B726C]">
+                        Commandes Équipe
+                      </span>
+                      <p className="text-2xl font-extrabold text-[#123B2A] font-title my-1 tabular-nums">
+                        {totalTeamOrders}
+                      </p>
+                      <span className="text-xs text-[#6B726C]">
+                        Via lien ?ref= ou code conseiller
+                      </span>
+                    </div>
+
+                    <div className="bg-white border border-[#E1E3DA] rounded-2xl p-5 shadow-xs">
+                      <span className="text-xs font-bold uppercase tracking-wider text-[#6B726C]">
+                        Ventes Validées Équipe
+                      </span>
+                      <p className="text-2xl font-extrabold text-[#1F5A40] font-title my-1 tabular-nums">
+                        {totalTeamSales}
+                      </p>
+                      <span className="text-xs text-[#6B726C]">
+                        Payées ou livrées confirmées
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Add / Edit Team Member Form */}
+                  <div className="bg-white border border-[#E1E3DA] rounded-2xl p-5 sm:p-6 shadow-xs">
+                    <div className="flex items-center justify-between pb-3 mb-4 border-b border-[#E1E3DA]">
+                      <h3 className="text-base font-bold font-title text-[#123B2A] flex items-center gap-2">
+                        <UserPlus className="w-4 h-4 text-[#1F5A40]" />
+                        <span>
+                          {editingMember
+                            ? `Modifier : ${editingMember.name}`
+                            : 'Ajouter un membre à l’équipe'}
+                        </span>
+                      </h3>
+                      {editingMember && (
+                        <button
+                          type="button"
+                          onClick={resetTeamForm}
+                          className="text-xs font-bold text-[#6B726C] hover:text-[#123B2A] cursor-pointer"
+                        >
+                          Annuler la modification
+                        </button>
+                      )}
+                    </div>
+
+                    <form onSubmit={handleTeamFormSubmit} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                      <div>
+                        <label className="block font-bold text-[#123B2A] mb-1">Nom complet *</label>
+                        <input
+                          type="text"
+                          required
+                          value={memberName}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setMemberName(val);
+                            if (!editingMember && !memberCode) {
+                              const suggested = val
+                                .trim()
+                                .split(/\s+/)[0]
+                                .toUpperCase()
+                                .replace(/[^A-Z0-9]/g, '')
+                                .slice(0, 10);
+                              if (suggested.length >= 3) {
+                                setMemberCode(suggested);
+                              }
+                            }
+                          }}
+                          placeholder="Ex : Moussa Traoré"
+                          className="w-full p-2.5 rounded-lg border border-[#E1E3DA] bg-[#FAF9F5] focus:outline-[#1F5A40]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-[#123B2A] mb-1">Code personnel *</label>
+                        <input
+                          type="text"
+                          required
+                          value={memberCode}
+                          onChange={(e) => setMemberCode(e.target.value.toUpperCase())}
+                          placeholder="Ex : MOUSA"
+                          className="w-full p-2.5 rounded-lg border border-[#E1E3DA] bg-[#FAF9F5] uppercase font-mono focus:outline-[#1F5A40]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-[#123B2A] mb-1">Code PIN (4-6 chiffres) *</label>
+                        <input
+                          type="text"
+                          required
+                          inputMode="numeric"
+                          maxLength={8}
+                          value={memberPin}
+                          onChange={(e) => setMemberPin(e.target.value)}
+                          placeholder="Ex : 4582"
+                          className="w-full p-2.5 rounded-lg border border-[#E1E3DA] bg-[#FAF9F5] font-mono focus:outline-[#1F5A40]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-[#123B2A] mb-1">
+                          Téléphone (optionnel)
+                        </label>
+                        <input
+                          type="tel"
+                          value={memberPhone}
+                          onChange={(e) => setMemberPhone(e.target.value)}
+                          placeholder="Laisser vide si sans téléphone"
+                          className="w-full p-2.5 rounded-lg border border-[#E1E3DA] bg-[#FAF9F5] focus:outline-[#1F5A40]"
+                        />
+                      </div>
+
+                      {teamFormError && (
+                        <div className="sm:col-span-2 lg:col-span-4 p-2.5 rounded-lg bg-red-50 border border-red-200 text-red-700 font-semibold">
+                          {teamFormError}
+                        </div>
+                      )}
+
+                      <div className="sm:col-span-2 lg:col-span-4 flex items-center justify-end gap-2 pt-1">
+                        <button
+                          type="submit"
+                          className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-lg bg-[#123B2A] hover:bg-[#1F5A40] text-white font-bold text-xs cursor-pointer"
+                        >
+                          <Save className="w-3.5 h-3.5 text-[#D8F36A]" />
+                          <span>{editingMember ? 'Enregistrer les modifications' : 'Créer le compte membre'}</span>
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+
+                  {/* Team Leaderboard / Progression Table */}
+                  <div className="bg-white border border-[#E1E3DA] rounded-2xl shadow-xs overflow-hidden">
+                    <div className="p-4 sm:p-5 bg-[#FAF9F5] border-b border-[#E1E3DA] flex items-center justify-between">
+                      <h3 className="text-base font-bold font-title text-[#123B2A]">
+                        Progression par membre ({teamMembers.length})
+                      </h3>
+                      <span className="text-xs text-[#6B726C]">
+                        Classé par ventes validées
+                      </span>
+                    </div>
+
+                    {memberMetrics.length === 0 ? (
+                      <div className="p-10 text-center text-xs sm:text-sm text-[#6B726C]">
+                        Aucun membre d&apos;équipe enregistré pour le moment. Créez un premier code et PIN ci-dessus pour suivre les partages.
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs sm:text-sm">
+                          <thead className="bg-[#FAF9F5] text-[#123B2A] uppercase font-bold text-[11px] tracking-wider border-b border-[#E1E3DA]">
+                            <tr>
+                              <th className="p-3.5">Membre</th>
+                              <th className="p-3.5">Code &amp; PIN</th>
+                              <th className="p-3.5 text-right">Clics</th>
+                              <th className="p-3.5 text-right">Commandes</th>
+                              <th className="p-3.5 text-right">Ventes validées</th>
+                              <th className="p-3.5 text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[#E1E3DA]">
+                            {memberMetrics.map(({ member, ordersCount, salesCount }) => {
+                              const shareLink = getBoutiqueShareUrl(member.code);
+                              const isPinVisible = Boolean(revealedPins[member.id]);
+                              return (
+                                <tr key={member.id} className="hover:bg-[#FAF9F5]">
+                                  <td className="p-3.5">
+                                    <p className="font-bold text-[#123B2A]">
+                                      {member.name}
+                                      {!member.active && (
+                                        <span className="ml-2 text-[11px] font-semibold text-red-700">
+                                          (Désactivé)
+                                        </span>
+                                      )}
+                                    </p>
+                                    <p className="text-[11px] text-[#6B726C]">
+                                      {member.phone ? member.phone : 'Sans téléphone · Code oral / appareil partagé'}
+                                    </p>
+                                  </td>
+                                  <td className="p-3.5">
+                                    <div className="flex items-center gap-2 font-mono text-xs">
+                                      <strong className="text-[#123B2A]">{member.code}</strong>
+                                      <span className="text-[#6B726C]">· PIN :</span>
+                                      <span className="text-[#202720]">
+                                        {isPinVisible ? member.pin : '••••'}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setRevealedPins((prev) => ({
+                                            ...prev,
+                                            [member.id]: !prev[member.id]
+                                          }))
+                                        }
+                                        title={isPinVisible ? 'Masquer PIN' : 'Voir PIN'}
+                                        className="text-[#6B726C] hover:text-[#123B2A] cursor-pointer"
+                                      >
+                                        {isPinVisible ? (
+                                          <EyeOff className="w-3.5 h-3.5" />
+                                        ) : (
+                                          <Eye className="w-3.5 h-3.5" />
+                                        )}
+                                      </button>
+                                    </div>
+                                  </td>
+                                  <td className="p-3.5 text-right font-bold tabular-nums text-[#123B2A]">
+                                    {member.clicks || 0}
+                                  </td>
+                                  <td className="p-3.5 text-right font-bold tabular-nums text-[#123B2A]">
+                                    {ordersCount}
+                                  </td>
+                                  <td className="p-3.5 text-right font-extrabold tabular-nums text-[#1F5A40]">
+                                    {salesCount}
+                                  </td>
+                                  <td className="p-3.5 text-right">
+                                    <div className="inline-flex items-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleCopyValue(shareLink, member.id)}
+                                        className="px-2.5 py-1 bg-[#FAF9F5] hover:bg-[#EFEFE6] border border-[#E1E3DA] text-[#123B2A] rounded-md text-xs font-semibold cursor-pointer inline-flex items-center gap-1"
+                                        title="Copier le lien personnel"
+                                      >
+                                        {copiedTeamCode === member.id ? (
+                                          <Check className="w-3 h-3 text-[#1F5A40]" />
+                                        ) : (
+                                          <Copy className="w-3 h-3" />
+                                        )}
+                                        <span>{copiedTeamCode === member.id ? 'Copié' : 'Lien'}</span>
+                                      </button>
+
+                                      {onUpdateTeamMember && (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            onUpdateTeamMember({
+                                              ...member,
+                                              active: !member.active
+                                            })
+                                          }
+                                          className="px-2.5 py-1 bg-[#FAF9F5] hover:bg-[#EFEFE6] border border-[#E1E3DA] text-[#123B2A] rounded-md text-xs font-semibold cursor-pointer"
+                                        >
+                                          {member.active ? 'Désactiver' : 'Activer'}
+                                        </button>
+                                      )}
+
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingMember(member);
+                                          setMemberName(member.name);
+                                          setMemberCode(member.code);
+                                          setMemberPin(member.pin);
+                                          setMemberPhone(member.phone || '');
+                                          setTeamFormError(null);
+                                        }}
+                                        className="p-1.5 bg-[#FAF9F5] hover:bg-[#EFEFE6] border border-[#E1E3DA] text-[#123B2A] rounded-md cursor-pointer"
+                                        title="Modifier"
+                                      >
+                                        <Edit3 className="w-3.5 h-3.5" />
+                                      </button>
+
+                                      {onDeleteTeamMember && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            if (confirm(`Supprimer le membre "${member.name}" ?`)) {
+                                              onDeleteTeamMember(member.id);
+                                            }
+                                          }}
+                                          className="p-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 rounded-md cursor-pointer"
+                                          title="Supprimer"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* MESSAGERIE CLIENTS EN DIRECT */}
+            {activeSection === 'messagerie' && (
+              <div className="lg:col-span-12">
+                <AdminChatInbox
+                  threads={chatThreads}
+                  selectedThreadId={selectedChatThreadId}
+                  onSelectThread={handleSelectChatThread}
+                  messages={chatMessages}
+                  isLoadingMessages={isLoadingChatMessages}
+                  wsConnected={chatWsConnected}
+                  products={products}
+                  onSendMessage={handleSendAdminChatMessage}
+                  onUpdateStatus={handleUpdateChatThreadStatus}
+                  onRefreshThreads={() => refreshChatThreads(true)}
+                  adminPushEnabled={adminPushEnabled}
+                  isTogglingPush={isTogglingPush}
+                  isTestingPush={isTestingPush}
+                  pushFeedback={pushFeedback}
+                  onTogglePush={handleToggleAdminPush}
+                  onTestPush={handleTestAdminPush}
+                />
               </div>
             )}
 
@@ -1591,7 +3134,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </button>
                         </div>
                         <div className="flex flex-wrap gap-1.5 mt-2">
-                          <span className="text-[11px] text-[#6B726C] self-center mr-1">Ajouter modèle :</span>
+                          <span className="text-[11px] text-[#6B726C] self-center mr-1">Affiches &amp; modèles :</span>
+                          <button
+                            type="button"
+                            onClick={() => handleAddHeroImageUrl(HERO_PROMO_DELIVERY_IMG)}
+                            className={`px-2.5 py-0.5 rounded border text-[10px] font-bold transition-colors cursor-pointer ${
+                              heroImages.includes(HERO_PROMO_DELIVERY_IMG)
+                                ? 'border-[#123B2A] bg-[#D8F36A]/45 text-[#123B2A]'
+                                : 'border-[#1F5A40]/40 bg-[#FAF9F5] text-[#123B2A] hover:bg-[#D8F36A]/30'
+                            }`}
+                          >
+                            {heroImages.includes(HERO_PROMO_DELIVERY_IMG)
+                              ? '✓ Pub Livraison Gratuite'
+                              : '+ Pub Livraison Gratuite'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAddHeroImageUrl(HERO_PROMO_COD_IMG)}
+                            className={`px-2.5 py-0.5 rounded border text-[10px] font-bold transition-colors cursor-pointer ${
+                              heroImages.includes(HERO_PROMO_COD_IMG)
+                                ? 'border-[#123B2A] bg-[#D8F36A]/45 text-[#123B2A]'
+                                : 'border-[#1F5A40]/40 bg-[#FAF9F5] text-[#123B2A] hover:bg-[#D8F36A]/30'
+                            }`}
+                          >
+                            {heroImages.includes(HERO_PROMO_COD_IMG)
+                              ? '✓ Pub Paiement Après Livraison'
+                              : '+ Pub Paiement Après Livraison'}
+                          </button>
                           <button
                             type="button"
                             onClick={() => handleAddHeroImageUrl('/src/assets/images/hero_fashion_burkina_1794167660891.jpg')}
@@ -2258,6 +3827,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 />
               </div>
 
+              <label className="flex items-center justify-between gap-3 p-3 rounded-xl border border-[#E1E3DA] bg-[#FAF9F5] cursor-pointer">
+                <div>
+                  <p className="font-bold text-xs text-[#123B2A]">
+                    Afficher dans « Nos produits phares » (page d&apos;accueil)
+                  </p>
+                  <p className="text-[11px] text-[#6B726C]">
+                    Cochez pour mettre ce produit en avant sur l&apos;accueil. Il reste toujours visible dans la boutique complète.
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={formFeatured}
+                  onChange={(e) => setFormFeatured(e.target.checked)}
+                  className="w-4 h-4 accent-[#123B2A] rounded cursor-pointer shrink-0"
+                />
+              </label>
+
               {/* WhatsApp auto-broadcast notice */}
               <div className="bg-[#E8F7EE] p-3 rounded-xl border border-[#A2E2B8] flex items-center gap-2 text-xs text-[#123B2A]">
                 <Check className="w-4 h-4 text-[#1F5A40] shrink-0" />
@@ -2323,6 +3909,130 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 className="px-4 py-2 rounded-lg bg-[#123B2A] text-white font-bold"
               >
                 Confirmer le prix
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* QUICK ORDER ITEMS PHOTO PREVIEW MODAL */}
+      {previewOrder && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setPreviewOrder(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#123B2A]/60 backdrop-blur-xs"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl p-5 sm:p-6 max-w-md w-full shadow-2xl border border-[#E1E3DA] max-h-[85vh] overflow-y-auto animate-fade-in"
+          >
+            <div className="flex items-center justify-between border-b border-[#E1E3DA] pb-3 mb-4">
+              <div>
+                <h3 className="font-bold text-base text-[#123B2A] font-title">
+                  Commande {previewOrder.id}
+                </h3>
+                <p className="text-xs text-[#6B726C]">
+                  {previewOrder.customerName} • {formatFCFA(previewOrder.total)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewOrder(null)}
+                aria-label="Fermer"
+                className="w-8 h-8 rounded-full bg-[#FAF9F5] border border-[#E1E3DA] flex items-center justify-center text-[#123B2A] cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              {(previewOrder.items && previewOrder.items.length > 0
+                ? previewOrder.items.map((item) => {
+                    const liveProd = products.find((p) => p.id === item.productId);
+                    return {
+                      name: item.name,
+                      ref: item.ref || liveProd?.ref,
+                      size: item.size,
+                      quantity: item.quantity,
+                      price: item.price,
+                      image:
+                        liveProd?.images?.[0] ||
+                        item.image ||
+                        `/api/products/${encodeURIComponent(item.productId)}/image.jpg`
+                    };
+                  })
+                : products
+                    .filter((p) => {
+                      const lowerSummary = previewOrder.itemsSummary.toLowerCase();
+                      return (
+                        lowerSummary.includes(p.name.toLowerCase()) ||
+                        (p.ref && lowerSummary.includes(p.ref.toLowerCase()))
+                      );
+                    })
+                    .map((p) => ({
+                      name: p.name,
+                      ref: p.ref,
+                      size: undefined,
+                      quantity: 1,
+                      price: p.price,
+                      image: p.images[0] || `/api/products/${encodeURIComponent(p.id)}/image.jpg`
+                    }))
+              ).map((item, idx) => (
+                <div
+                  key={idx}
+                  className="p-3 rounded-xl border border-[#E1E3DA] bg-[#FAF9F5] flex items-center gap-3"
+                >
+                  <img
+                    src={item.image}
+                    alt={item.name}
+                    className="w-20 h-20 rounded-xl object-cover bg-white border border-[#E1E3DA] shrink-0"
+                  />
+                  <div className="min-w-0 flex-1 text-xs">
+                    {item.ref && (
+                      <p className="text-[10px] font-bold text-[#1F5A40] uppercase">Réf : {item.ref}</p>
+                    )}
+                    <p className="font-bold text-sm text-[#123B2A]">{item.name}</p>
+                    <p className="text-[#6B726C] mt-0.5">
+                      Qté : {item.quantity}
+                      {item.size ? ` • Taille : ${item.size}` : ''}
+                    </p>
+                    <p className="font-bold text-[#123B2A] mt-0.5 tabular-nums">
+                      {formatFCFA(item.price)}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Live Customer Message / Order Floating Alert */}
+      {liveChatAlert && (
+        <div className="fixed bottom-4 right-4 z-50 max-w-sm bg-[#123B2A] text-white p-3.5 rounded-2xl shadow-2xl border border-[#D8F36A] flex items-start gap-3">
+          <BellRing className="w-5 h-5 text-[#D8F36A] shrink-0 mt-0.5" />
+          <div className="min-w-0 flex-1 text-xs">
+            <p className="font-bold text-[#D8F36A] truncate">{liveChatAlert.title}</p>
+            <p className="text-white/90 line-clamp-2 mt-0.5">{liveChatAlert.body}</p>
+            <div className="flex items-center gap-2 mt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const id = liveChatAlert.threadId;
+                  setLiveChatAlert(null);
+                  setActiveSection('messagerie');
+                  void handleSelectChatThread(id);
+                }}
+                className="px-3 py-1 rounded-lg bg-[#D8F36A] text-[#123B2A] font-bold text-[11px] cursor-pointer"
+              >
+                Répondre
+              </button>
+              <button
+                type="button"
+                onClick={() => setLiveChatAlert(null)}
+                className="px-2 py-1 text-white/70 hover:text-white text-[11px] cursor-pointer"
+              >
+                Fermer
               </button>
             </div>
           </div>
